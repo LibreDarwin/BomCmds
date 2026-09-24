@@ -1,5 +1,12 @@
 .DS_Store
 *.o
+*.a
 *.tmp
+*.dmg
+*.bom
 build/
 Build/
+local/
+mkbom
+lsbom
+ditto
