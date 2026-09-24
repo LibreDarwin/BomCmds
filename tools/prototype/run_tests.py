@@ -29,6 +29,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROTO = os.path.join(HERE, 'mkbom_proto.py')
 LSBOM = '/usr/bin/lsbom'
+_LSBOM_SUBJECT = None
 BE = '>'
 
 
@@ -105,6 +106,33 @@ def lsbom(path):
     return r.returncode, r.stdout
 
 
+def lsbom_battery(bom):
+    """Compare /usr/bin/lsbom vs the clean-room lsbom (pass --subject-lsbom)
+    on `bom` for every argument set of interest: stdout, stderr and exit
+    status must all be byte-identical."""
+    battery = [
+        [],
+        ['-s'], ['-f'], ['-d'], ['-l'], ['-b'], ['-c'], ['-m'], ['-x'],
+        ['-sf'], ['-fd'], ['-l', '-s'], ['-m', '-x'],
+        ['-p', ''], ['-p', 'f'], ['-p', 'F'], ['-p', 'fm'], ['-p', 'mA'],
+        ['-p', 'uUGG'], ['-p', 'sc'], ['-p', 'tT'], ['-p', '/'], ['-p', '?'],
+        ['-p', 'S'], ['-p', 'M'], ['-s', '-p', 'f'],
+        ['--arch', 'x86_64'], ['--arch', 'any'], ['--arch', 'ppc'],
+        ['-p', 'ff'], ['-p', 'z'], ['--arch', 'bogus'], ['-Z'],
+    ]
+    global _LSBOM_SUBJECT
+    for args in battery:
+        ref = subprocess.run([LSBOM] + args + [bom], capture_output=True,
+                             text=True)
+        out = subprocess.run(_LSBOM_SUBJECT + args + [bom], capture_output=True,
+                             text=True)
+        if (ref.returncode, ref.stdout, ref.stderr) != \
+           (out.returncode, out.stdout, out.stderr):
+            return ('MISMATCH', 'args=%r rc %d/%d' %
+                    (args, ref.returncode, out.returncode))
+    return None
+
+
 def blockmap(path):
     """Return (nob, {index: block_bytes}) resolved via the file index."""
     d = open(path, 'rb').read()
@@ -141,6 +169,12 @@ def run(fixture, trees, subject, ref_mkbom):
         return 'BLOCK-DIFF', 'blocks differ: %s' % diff
     if lsbom(ref) != lsbom(out):
         return 'LSBOM-DIFF', ''
+    if _LSBOM_SUBJECT is not None:
+        for bom in (ref, out):
+            bad = lsbom_battery(bom)
+            if bad:
+                st, detail = bad
+                return 'LSBOM-BATTERY-FAIL', detail + ' %s' % bom
     return 'OK', ''
 
 
@@ -150,7 +184,13 @@ def main():
                     help='writer under test (default: python prototype)')
     ap.add_argument('--ref-mkbom', default='/usr/bin/mkbom',
                     help='reference mkbom (default: /usr/bin/mkbom)')
+    ap.add_argument('--lsbom', nargs='+', default=None,
+                    help='clean-room lsbom to conformance-test')
+    ap.add_argument('--subject-lsbom', action='store_true',
+                    help='run the lsbom flag battery (needs --lsbom)')
     args = ap.parse_args()
+    global _LSBOM_SUBJECT
+    _LSBOM_SUBJECT = args.lsbom if args.subject_lsbom else None
     trees = os.path.join(HERE, '.test_tmp', '_trees')
     if os.path.isdir(trees):
         shutil.rmtree(trees)

@@ -1,0 +1,110 @@
+.\" Copyright (C) 2026, LibreDarwin
+.\" SPDX-License-Identifier: BSD-3-Clause
+.Dd September 24, 2026
+.Dt LSBOM 1
+.Os
+.Sh NAME
+.Nm lsbom
+.Nd list the contents of a bill of materials (BOM) file
+.Sh SYNOPSIS
+.Nm
+.Op Fl h
+.Op Fl s
+.Op Fl f | Fl d | Fl l | Fl b | Fl c
+.Op Fl m
+.Op Fl x
+.Op Fl -arch Cm archVal
+.Op Fl p Ar parameters
+.Ar bomFile ...
+.Sh DESCRIPTION
+The
+.Nm
+utility reads one or more bill-of-materials files
+.Ar bomFile
+and prints their contents on standard output.
+A BOM is a binary container used during installation to record the
+files, directories, symbolic links, and other entries that a package
+is expected to install.
+.Pp
+By default each entry is printed as:
+.Bd -literal -offset indent
+path	<octal mode>	owner/group	[	size	checksum	[ target ] ]
+.Ed
+.Pp
+The size, checksum, and (for symbolic links) the target are printed
+for entries other than directories; the target is the link target
+stored in the BOM.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl h
+Print full usage to standard error and exit.
+.It Fl s
+Print path names only.
+.It Fl f , Fl d , Fl l , Fl b , Fl c
+Print only files, directories, symbolic links, block devices, or
+character devices respectively.
+The flags select entries by their recorded path type and may be
+combined; the default is to print entries of every type.
+.It Fl m
+Print the modified time of regular files, in ctime format, as an
+additional trailing column.
+.It Fl x
+Suppress the mode for directories and symbolic links.
+.It Fl -arch Ar archVal
+Print metadata for the given architecture
+.Pq Qq ppc , Qq i386 , Qq hppa , Qq sparc , Qq ppc64 , Qq x86_64 , or Qq any .
+Entries recorded for other architectures are printed with zeroed
+metadata.
+.It Fl p Ar parameters
+Print only the requested columns, in the order given.
+Any of the following letters may be used, at most once:
+.Bl -tag -width Ds -compact
+.It f
+file name
+.It F
+file name, quoted
+.It m
+file mode (octal)
+.It M
+symbolic file mode
+.It g
+group id
+.It G
+group name
+.It u
+user id
+.It U
+user name
+.It t
+modification time (seconds since the epoch)
+.It T
+formatted modification time
+.It s
+file size
+.It S
+formatted size
+.It c
+32-bit checksum
+.It /
+user id / group id
+.It ?
+user name / group name
+.El
+Fields are separated by tabs; fields that have no value are empty.
+.El
+.Pp
+The output and diagnostics of this implementation are byte-for-byte
+identical to those of Apple's lsbom for the BOM files this project
+produces.
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr mkbom 1 ,
+.Xr bom 5
+.Sh HISTORY
+This implementation is a clean-room rewrite of the classic
+.Nm
+utility.
+.Sh AUTHORS
+.An LibreDarwin

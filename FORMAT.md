@@ -316,3 +316,24 @@ contents/sizes match mkbom's. This satisfies the accepted conformance bar.
   out of scope for the dir-mode writer milestone.
 - VIndex/Size64 subtrees are always empty in modern mkbom output; treated as
   fixed placeholders.
+
+## 9. lsbom query behavior (oracle)
+
+- Entries are walked DFS pre-order from the root (parent_pid == 0), children
+  in Paths-row order; the root prints as `.`, children as `./name`.
+- Default line: `path\t<mode, u16 octal>\tuid/gid`; non-directories then add
+  `\tsize\tchecksum`; symbolic links append `\ttarget` (stored link bytes).
+- Type filters (`-f -d -l -b -c`) select on PathRecord.path_type (1 file, 2
+  dir, 3 link, 4 block, 5 char), *not* on mode bits; filters union.
+- `-x` drops the mode column for dirs and links; `-m` appends a ctime-formatted
+  mtime column only for regular files.
+- Block/char devices print `path\tmode\tuid/gid\t<signed int32 checksum>`; the
+  size column is omitted. path_type 6/7 aborts that entry with
+  `filesystem object has an invalid type: 0x6` + `Cannot dearchive.` on stderr.
+- `-p` prints one tab-joined cell per requested letter, order-preserving;
+  directories yield empty cells for `t` `T` `s` `S` `c`. `S` groups thousands
+  with commas (hardcoded, locale-independent).
+- `--arch` matches PathRecord.architecture: `0xf` (any) matches every request;
+  a non-f entry that does not match the requested arch prints with all-zero
+  metadata (`path\t0\t0/0\t0\t0`); the default (no `--arch`) requests x86_64.
+  Recognized names: ppc, i386, hppa, sparc, ppc64, x86_64, any.
