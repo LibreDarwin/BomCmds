@@ -112,12 +112,33 @@ LIBBOM_HIDDEN uint32_t _bom_storage_var_block(const BOMStorage *s,
 
 /* ---- BOMBom: a bom file object ---- */
 
+/* One row of a NewWithSys tree that has not been committed yet: the raw
+ * PathRecord bytes to emit plus the path bookkeeping.  `pid`/`parent` are
+ * the ORIGINAL path ids the row is holding (never reused, so removal leaves
+ * no dangling references); bom_reencode renumbers from them at commit. */
+struct bom_pend_row {
+    char       *path;      /* full "./..." path (owned) */
+    char       *leaf;      /* leaf name (owned); root row: "." */
+    uint8_t    *pr;        /* raw PathRecord bytes (owned) */
+    size_t      prlen;
+    uint32_t    pid;
+    uint32_t    parent;
+};
+
 struct BOMBom {
     char       *path;      /* file path (owned) */
     BOMStorage *storage;   /* read image (owned) */
     BOMTree    *paths;     /* "Paths" tree (owned) */
     int         open;      /* 1 = readable image loaded */
     int         for_write; /* 1 = created via NewWithSys */
+
+    /* Pending mutation rows (write-on-free).  Parent rows always precede
+     * children, so commit hands bom_reencode a parent-before-child set. */
+    struct bom_pend_row *pend;   /* owned array */
+    size_t            npend;     /* rows in use */
+    size_t            pendcap;   /* allocated */
+    uint32_t          next_pid;  /* monotonic pid allocator (root = 1) */
+    int               committed; /* 1 = file already emitted on free */
 };
 
 struct BOMBomEnumerator {
