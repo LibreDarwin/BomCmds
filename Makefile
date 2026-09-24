@@ -18,7 +18,7 @@ CC     := /Users/sunneva/xnuports-root/devel/xcode-tools/build/release/Developer
 BUILD_DIR := build/$(CONFIG)
 OBJDIR    := $(BUILD_DIR)/obj
 
-CFLAGS := $(OPT) -std=c11 -D_DARWIN_C_SOURCE -isysroot "$(SDK)" -I. -Wall -Wextra
+CFLAGS := $(OPT) -std=c11 -D_DARWIN_C_SOURCE -isysroot "$(SDK)" -Isrc -Wall -Wextra
 
 MK       := $(BUILD_DIR)/mkbom
 MK_OBJS  := $(OBJDIR)/mkbom_main.o
@@ -33,21 +33,21 @@ $(MK): $(MK_OBJS) $(LIB_OBJS)
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(OBJDIR)/mkbom_main.o: cmd/mkbom/main.c bom/bom_writer.h bom/fs_walk.h
+$(OBJDIR)/mkbom_main.o: src/mkbom/mkbom.c src/libbom/bom_writer.h src/libbom/fs_walk.h
 	@mkdir -p $(OBJDIR)
-	$(CC) $(CFLAGS) -c -o $@ cmd/mkbom/main.c
+	$(CC) $(CFLAGS) -c -o $@ src/mkbom/mkbom.c
 
-$(OBJDIR)/bom_cksum.o: bom/bom_cksum.c bom/bom_cksum.h
+$(OBJDIR)/bom_cksum.o: src/libbom/bom_cksum.c src/libbom/bom_cksum.h
 	@mkdir -p $(OBJDIR)
-	$(CC) $(CFLAGS) -c -o $@ bom/bom_cksum.c
+	$(CC) $(CFLAGS) -c -o $@ src/libbom/bom_cksum.c
 
-$(OBJDIR)/fs_walk.o: bom/fs_walk.c bom/fs_walk.h
+$(OBJDIR)/fs_walk.o: src/libbom/fs_walk.c src/libbom/fs_walk.h
 	@mkdir -p $(OBJDIR)
-	$(CC) $(CFLAGS) -c -o $@ bom/fs_walk.c
+	$(CC) $(CFLAGS) -c -o $@ src/libbom/fs_walk.c
 
-$(OBJDIR)/bom_writer.o: bom/bom_writer.c bom/bom_writer.h bom/bom_cksum.h bom/fs_walk.h
+$(OBJDIR)/bom_writer.o: src/libbom/bom_writer.c src/libbom/bom_writer.h src/libbom/bom_cksum.h src/libbom/fs_walk.h
 	@mkdir -p $(OBJDIR)
-	$(CC) $(CFLAGS) -c -o $@ bom/bom_writer.c
+	$(CC) $(CFLAGS) -c -o $@ src/libbom/bom_writer.c
 
 test: all
 	python3 prototype/run_tests.py --subject $(MK)

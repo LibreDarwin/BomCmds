@@ -7,14 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1A2B3C4D0000000000000021 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000011 /* main.c */; };
+		1A2B3C4D0000000000000021 /* mkbom.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000011 /* mkbom.c */; };
 		1A2B3C4D0000000000000022 /* bom_cksum.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000012 /* bom_cksum.c */; };
 		1A2B3C4D0000000000000023 /* fs_walk.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000014 /* fs_walk.c */; };
 		1A2B3C4D0000000000000024 /* bom_writer.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000016 /* bom_writer.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		1A2B3C4D0000000000000011 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
+		1A2B3C4D0000000000000011 /* mkbom.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mkbom.c; sourceTree = "<group>"; };
 		1A2B3C4D0000000000000012 /* bom_cksum.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = bom_cksum.c; sourceTree = "<group>"; };
 		1A2B3C4D0000000000000013 /* bom_cksum.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bom_cksum.h; sourceTree = "<group>"; };
 		1A2B3C4D0000000000000014 /* fs_walk.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fs_walk.c; sourceTree = "<group>"; };
@@ -39,8 +39,7 @@
 		1A2B3C4D0000000000000002 = {
 			isa = PBXGroup;
 			children = (
-				1A2B3C4D0000000000000004 /* bom */,
-				1A2B3C4D0000000000000005 /* cmd */,
+				1A2B3C4D0000000000000008 /* src */,
 				1A2B3C4D0000000000000007 /* man */,
 				1A2B3C4D0000000000000003 /* Products */,
 			);
@@ -54,7 +53,16 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		1A2B3C4D0000000000000004 /* bom */ = {
+		1A2B3C4D0000000000000008 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				1A2B3C4D0000000000000009 /* libbom */,
+				1A2B3C4D000000000000000A /* mkbom */,
+			);
+			path = src;
+			sourceTree = "<group>";
+		};
+		1A2B3C4D0000000000000009 /* libbom */ = {
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D0000000000000012 /* bom_cksum.c */,
@@ -64,21 +72,13 @@
 				1A2B3C4D0000000000000016 /* bom_writer.c */,
 				1A2B3C4D0000000000000017 /* bom_writer.h */,
 			);
-			path = bom;
+			path = libbom;
 			sourceTree = "<group>";
 		};
-		1A2B3C4D0000000000000005 /* cmd */ = {
+		1A2B3C4D000000000000000A /* mkbom */ = {
 			isa = PBXGroup;
 			children = (
-				1A2B3C4D0000000000000006 /* mkbom */,
-			);
-			path = cmd;
-			sourceTree = "<group>";
-		};
-		1A2B3C4D0000000000000006 /* mkbom */ = {
-			isa = PBXGroup;
-			children = (
-				1A2B3C4D0000000000000011 /* main.c */,
+				1A2B3C4D0000000000000011 /* mkbom.c */,
 			);
 			path = mkbom;
 			sourceTree = "<group>";
@@ -142,7 +142,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1A2B3C4D0000000000000021 /* main.c in Sources */,
+				1A2B3C4D0000000000000021 /* mkbom.c in Sources */,
 				1A2B3C4D0000000000000022 /* bom_cksum.c in Sources */,
 				1A2B3C4D0000000000000023 /* fs_walk.c in Sources */,
 				1A2B3C4D0000000000000024 /* bom_writer.c in Sources */,
@@ -191,7 +191,7 @@
 				CONFIGURATION_BUILD_DIR = "$(SRCROOT)/build/debug";
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				GCC_OPTIMIZATION_LEVEL = 0;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)";
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/src";
 				OBJROOT = "$(SRCROOT)/build/obj/debug";
 				SDKROOT = macosx;
 				SYMROOT = "$(SRCROOT)/build";
@@ -204,7 +204,7 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CONFIGURATION_BUILD_DIR = "$(SRCROOT)/build/release";
 				GCC_OPTIMIZATION_LEVEL = 3;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)";
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/src";
 				OBJROOT = "$(SRCROOT)/build/obj/release";
 				SDKROOT = macosx;
 				SYMROOT = "$(SRCROOT)/build";

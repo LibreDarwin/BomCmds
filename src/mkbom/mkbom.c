@@ -9,8 +9,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "bom/bom_writer.h"
-#include "bom/fs_walk.h"
+#include "libbom/bom_writer.h"
+#include "libbom/fs_walk.h"
 
 static void usage(void) {
     fprintf(stderr, "usage: mkbom [-s] directory bomFile\n");
