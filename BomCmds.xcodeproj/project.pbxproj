@@ -1,0 +1,238 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1A2B3C4D0000000000000021 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000011 /* main.c */; };
+		1A2B3C4D0000000000000022 /* bom_cksum.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000012 /* bom_cksum.c */; };
+		1A2B3C4D0000000000000023 /* fs_walk.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000014 /* fs_walk.c */; };
+		1A2B3C4D0000000000000024 /* bom_writer.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000016 /* bom_writer.c */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1A2B3C4D0000000000000011 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
+		1A2B3C4D0000000000000012 /* bom_cksum.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = bom_cksum.c; sourceTree = "<group>"; };
+		1A2B3C4D0000000000000013 /* bom_cksum.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bom_cksum.h; sourceTree = "<group>"; };
+		1A2B3C4D0000000000000014 /* fs_walk.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fs_walk.c; sourceTree = "<group>"; };
+		1A2B3C4D0000000000000015 /* fs_walk.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fs_walk.h; sourceTree = "<group>"; };
+		1A2B3C4D0000000000000016 /* bom_writer.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = bom_writer.c; sourceTree = "<group>"; };
+		1A2B3C4D0000000000000017 /* bom_writer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bom_writer.h; sourceTree = "<group>"; };
+		1A2B3C4D0000000000000018 /* mkbom */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = mkbom; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A2B3C4D0000000000000019 /* mkbom.1 */ = {isa = PBXFileReference; lastKnownFileType = text.man; path = mkbom.1; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1A2B3C4D000000000000003A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1A2B3C4D0000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				1A2B3C4D0000000000000004 /* bom */,
+				1A2B3C4D0000000000000005 /* cmd */,
+				1A2B3C4D0000000000000007 /* man */,
+				1A2B3C4D0000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1A2B3C4D0000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1A2B3C4D0000000000000018 /* mkbom */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		1A2B3C4D0000000000000004 /* bom */ = {
+			isa = PBXGroup;
+			children = (
+				1A2B3C4D0000000000000012 /* bom_cksum.c */,
+				1A2B3C4D0000000000000013 /* bom_cksum.h */,
+				1A2B3C4D0000000000000014 /* fs_walk.c */,
+				1A2B3C4D0000000000000015 /* fs_walk.h */,
+				1A2B3C4D0000000000000016 /* bom_writer.c */,
+				1A2B3C4D0000000000000017 /* bom_writer.h */,
+			);
+			path = bom;
+			sourceTree = "<group>";
+		};
+		1A2B3C4D0000000000000005 /* cmd */ = {
+			isa = PBXGroup;
+			children = (
+				1A2B3C4D0000000000000006 /* mkbom */,
+			);
+			path = cmd;
+			sourceTree = "<group>";
+		};
+		1A2B3C4D0000000000000006 /* mkbom */ = {
+			isa = PBXGroup;
+			children = (
+				1A2B3C4D0000000000000011 /* main.c */,
+			);
+			path = mkbom;
+			sourceTree = "<group>";
+		};
+		1A2B3C4D0000000000000007 /* man */ = {
+			isa = PBXGroup;
+			children = (
+				1A2B3C4D0000000000000019 /* mkbom.1 */,
+			);
+			path = man;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1A2B3C4D0000000000000031 /* mkbom */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A2B3C4D0000000000000033 /* Build configuration list for PBXNativeTarget "mkbom" */;
+			buildPhases = (
+				1A2B3C4D0000000000000032 /* Sources */,
+				1A2B3C4D000000000000003A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = mkbom;
+			productName = mkbom;
+			productReference = 1A2B3C4D0000000000000018 /* mkbom */;
+			productType = "com.apple.product-type.tool";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1A2B3C4D0000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = 1A2B3C4D0000000000000034 /* Build configuration list for PBXProject "BomCmds" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				base,
+			);
+			mainGroup = 1A2B3C4D0000000000000002;
+			productRefGroup = 1A2B3C4D0000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1A2B3C4D0000000000000031 /* mkbom */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1A2B3C4D0000000000000032 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A2B3C4D0000000000000021 /* main.c in Sources */,
+				1A2B3C4D0000000000000022 /* bom_cksum.c in Sources */,
+				1A2B3C4D0000000000000023 /* fs_walk.c in Sources */,
+				1A2B3C4D0000000000000024 /* bom_writer.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1A2B3C4D0000000000000035 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				EXECUTABLE_PREFIX = "";
+				GCC_C_LANGUAGE_STANDARD = c11;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_CFLAGS = (
+					"-D_DARWIN_C_SOURCE",
+					"-Wall",
+					"-Wextra",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		1A2B3C4D0000000000000036 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				EXECUTABLE_PREFIX = "";
+				GCC_C_LANGUAGE_STANDARD = c11;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_CFLAGS = (
+					"-D_DARWIN_C_SOURCE",
+					"-Wall",
+					"-Wextra",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		1A2B3C4D0000000000000037 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CONFIGURATION_BUILD_DIR = "$(SRCROOT)/build/debug";
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)";
+				OBJROOT = "$(SRCROOT)/build/obj/debug";
+				SDKROOT = macosx;
+				SYMROOT = "$(SRCROOT)/build";
+			};
+			name = Debug;
+		};
+		1A2B3C4D0000000000000038 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CONFIGURATION_BUILD_DIR = "$(SRCROOT)/build/release";
+				GCC_OPTIMIZATION_LEVEL = 3;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)";
+				OBJROOT = "$(SRCROOT)/build/obj/release";
+				SDKROOT = macosx;
+				SYMROOT = "$(SRCROOT)/build";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1A2B3C4D0000000000000033 /* Build configuration list for PBXNativeTarget "mkbom" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A2B3C4D0000000000000035 /* Debug */,
+				1A2B3C4D0000000000000036 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A2B3C4D0000000000000034 /* Build configuration list for PBXProject "BomCmds" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A2B3C4D0000000000000037 /* Debug */,
+				1A2B3C4D0000000000000038 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1A2B3C4D0000000000000001 /* Project object */;
+}

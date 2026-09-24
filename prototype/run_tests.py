@@ -2,9 +2,10 @@
 # Copyright (C) 2026, LibreDarwin
 """Round-trip conformance runner for the clean-room BOM writer prototype.
 
-For every fixture tree built in a scratch dir it runs the *system* mkbom
-(the oracle) and the clean-room prototype writer (mkbom_proto.py), then
-verifies equivalence two ways:
+For every fixture tree built in a scratch dir it runs the *reference*
+mkbom (default /usr/bin/mkbom, the oracle) and the clean-room writer under
+test (default the Python prototype; pass --subject to test the C port),
+then verifies equivalence two ways:
 
   1. block-level: number_of_blocks, and for every block index both the
      recorded length and the exact block content bytes are identical;
@@ -15,19 +16,18 @@ Physical file offsets and the free list are allowed to differ (they are
 not reachable through the block index), per the conformance bar in
 local/BomCmds.md and FORMAT.md section 2.
 
-Usage: python3 run_tests.py
+Usage: python3 run_tests.py [--subject CMD] [--ref-mkbom CMD]
 """
+import argparse
 import os
 import os.path
 import shutil
 import struct
 import subprocess
 import sys
-import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROTO = os.path.join(HERE, 'mkbom_proto.py')
-MKBOM = '/usr/bin/mkbom'
 LSBOM = '/usr/bin/lsbom'
 BE = '>'
 
@@ -119,7 +119,7 @@ def blockmap(path):
     return nob, m
 
 
-def run(fixture, trees):
+def run(fixture, trees, subject, ref_mkbom):
     scratch = os.path.join(HERE, '.test_tmp')
     os.makedirs(scratch, exist_ok=True)
     ref = os.path.join(scratch, fixture + '.ref.bom')
@@ -128,10 +128,10 @@ def run(fixture, trees):
     if os.path.isdir(d):
         shutil.rmtree(d)
     shutil.copytree(os.path.join(trees, fixture), d, symlinks=True)
-    if subprocess.run([MKBOM, d, ref]).returncode != 0:
+    if subprocess.run([ref_mkbom, d, ref]).returncode != 0:
         return 'REF-MKBOM-FAIL', ''
-    if subprocess.run([sys.executable, PROTO, d, out]).returncode != 0:
-        return 'PROTO-FAIL', ''
+    if subprocess.run(subject + [d, out]).returncode != 0:
+        return 'SUBJECT-FAIL', ''
     rn, rm = blockmap(ref)
     on, om = blockmap(out)
     if rn != on:
@@ -145,6 +145,12 @@ def run(fixture, trees):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--subject', nargs='+', default=[sys.executable, PROTO],
+                    help='writer under test (default: python prototype)')
+    ap.add_argument('--ref-mkbom', default='/usr/bin/mkbom',
+                    help='reference mkbom (default: /usr/bin/mkbom)')
+    args = ap.parse_args()
     trees = os.path.join(HERE, '.test_tmp', '_trees')
     if os.path.isdir(trees):
         shutil.rmtree(trees)
@@ -153,7 +159,7 @@ def main():
     fixtures = sorted(os.listdir(trees))
     failures = 0
     for fx in fixtures:
-        st, detail = run(fx, trees)
+        st, detail = run(fx, trees, args.subject, args.ref_mkbom)
         if st != 'OK':
             failures += 1
             line = '%-12s FAIL %-14s %s' % (fx, st, detail)

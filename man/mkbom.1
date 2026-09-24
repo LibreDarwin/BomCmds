@@ -1,0 +1,50 @@
+.\" Copyright (C) 2026, LibreDarwin
+.\" SPDX-License-Identifier: BSD-3-Clause
+.Dd September 24, 2026
+.Dt MKBOM 1
+.Os
+.Sh NAME
+.Nm mkbom
+.Nd create a bill of materials (BOM) for a directory tree
+.Sh SYNOPSIS
+.Nm
+.Ar directory
+.Ar bomFile
+.Sh DESCRIPTION
+The
+.Nm
+utility creates a bill of materials file
+.Ar bomFile
+that describes the directory tree rooted at
+.Ar directory .
+A BOM is a binary container used during installation to record the
+files, directories, symbolic links, device nodes, and other entries
+that a package is expected to install.
+.Pp
+The directory tree is scanned recursively.
+Entries are written to the BOM in the order in which they are
+encountered.
+Hard-linked files are recorded once as a hierarchy of hard links so
+that they can be re-created as a hard-link group on installation,
+while symbolic links are stored with their target path.
+.Pp
+The BOM written by
+.Nm
+is byte-for-byte identical to the corresponding output of Apple's
+mkbom for ordinary directory trees.
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr lsbom 1 ,
+.Xr bom 5
+.Sh HISTORY
+This implementation is a clean-room rewrite of the classic
+.Nm
+utility.
+Simplified mode
+.Pq Fl s
+and file-list mode
+.Pq Fl i
+are not implemented yet.
+.Sh AUTHORS
+.An LibreDarwin

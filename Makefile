@@ -1,0 +1,63 @@
+# Copyright (C) 2026, LibreDarwin
+# SPDX-License-Identifier: BSD-3-Clause
+# Clean-room reimplementation of mkbom/lsbom.
+#
+# Build layout: every artifact lives under build/; final tools go to
+# build/release/ or build/debug/ per CONFIG.
+#
+# Portable to both GNU make and BSD make (bmake): no pattern rules, no
+# ifeq/ifdef/.if conditionals and no $(if)/$(shell) functions.  Per-config
+# flags come from make/<CONFIG>.mk so both make variants behave identically.
+
+CONFIG ?= release
+SDK    ?= /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+CC     := /Users/sunneva/xnuports-root/devel/xcode-tools/build/release/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang
+
+-include make/$(CONFIG).mk
+
+BUILD_DIR := build/$(CONFIG)
+OBJDIR    := $(BUILD_DIR)/obj
+
+CFLAGS := $(OPT) -std=c11 -D_DARWIN_C_SOURCE -isysroot "$(SDK)" -I. -Wall -Wextra
+
+MK       := $(BUILD_DIR)/mkbom
+MK_OBJS  := $(OBJDIR)/mkbom_main.o
+LIB_OBJS := $(OBJDIR)/bom_cksum.o $(OBJDIR)/fs_walk.o $(OBJDIR)/bom_writer.o
+
+PREFIX  ?= /usr/local
+DESTDIR ?=
+
+all: $(MK)
+
+$(MK): $(MK_OBJS) $(LIB_OBJS)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(OBJDIR)/mkbom_main.o: cmd/mkbom/main.c bom/bom_writer.h bom/fs_walk.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ cmd/mkbom/main.c
+
+$(OBJDIR)/bom_cksum.o: bom/bom_cksum.c bom/bom_cksum.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ bom/bom_cksum.c
+
+$(OBJDIR)/fs_walk.o: bom/fs_walk.c bom/fs_walk.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ bom/fs_walk.c
+
+$(OBJDIR)/bom_writer.o: bom/bom_writer.c bom/bom_writer.h bom/bom_cksum.h bom/fs_walk.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ bom/bom_writer.c
+
+test: all
+	python3 prototype/run_tests.py --subject $(MK)
+
+install: all
+	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/man/man1
+	install -m 0755 $(MK) $(DESTDIR)$(PREFIX)/bin/mkbom
+	install -m 0444 man/mkbom.1 $(DESTDIR)$(PREFIX)/share/man/man1/mkbom.1
+
+clean:
+	rm -rf build
+
+.PHONY: all test install clean
