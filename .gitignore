@@ -8,8 +8,5 @@ build/
 Build/
 local/
 tools/prototype/.test_tmp/
-/mkbom
-/lsbom
-/ditto
 __pycache__/
 *.pyc
