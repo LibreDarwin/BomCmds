@@ -6,9 +6,10 @@
  * tree, resolves nodes by path).  Write side:
  *   - BOMBomNewFromDirectoryWithOptions scans with fs_walk and reuses the
  *     byte-identical bm_write_bom (same output as /usr/bin/mkbom);
- *   - BOMBomNewFromBomWithOptions clones a readable bom to a new path
- *     (options are stored; a full filtered re-emit is a writer feature and
- *     is not implemented yet);
+ *   - BOMBomNewFromBomWithOptions clones a readable bom to a new path; when
+ *     arch/lang filters are supplied it re-emits from decoded rows instead
+ *     of copying bytes (no hard-link group trailers; the no-filter path
+ *     stays a verbatim copy);
  *   - BOMBomInsertFSObject/RemoveFSObject mutate the in-memory tree only
  *     (they do not yet re-emit the file on free).
  * Reference clients pass BOMSys = NULL everywhere. */
@@ -18,8 +19,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <CoreFoundation/CoreFoundation.h>
+
 #include "fs_walk.h"
 #include "bom_writer.h"
+#include "bom_reencode.h"
 
 /* ---- open / new ---- */
 
@@ -99,6 +103,201 @@ BOMBom *BOMBomNewFromDirectoryWithOptions(const char *bomPath,
     return b;
 }
 
+/* CFArray helpers for the arch/lang filters.  archFilter carries CFNumber
+ * cputypes; langFilter carries CFString language codes ("en", "fr", ...). */
+
+static int filter_has_cputype(const void *archFilter, uint32_t cputype) {
+    CFArrayRef arr = (CFArrayRef)archFilter;
+    CFIndex i, n;
+    if (arr == NULL)
+        return 1;
+    n = CFArrayGetCount(arr);
+    for (i = 0; i < n; i++) {
+        CFNumberRef nr = (CFNumberRef)CFArrayGetValueAtIndex(arr, i);
+        int v = 0;
+        if (nr == NULL)
+            continue;
+        if (CFNumberGetValue(nr, kCFNumberIntType, &v) &&
+            (uint32_t)v == cputype)
+            return 1;
+    }
+    return 0;
+}
+
+/* A language pack directory keeps its "en.lproj" form only when the code
+ * before ".lproj" is in the allowed set. */
+static int lang_allowed(const void *langFilter, const char *name,
+                        size_t name_len) {
+    static const char lproj[] = ".lproj";
+    size_t lproj_len = sizeof(lproj) - 1;
+    CFArrayRef arr = (CFArrayRef)langFilter;
+    CFIndex i, n;
+    char code[128];
+    size_t clen;
+    if (arr == NULL)
+        return 1;
+    if (name_len <= lproj_len ||
+        memcmp(name + name_len - lproj_len, lproj, lproj_len) != 0)
+        return 1; /* not a language pack directory */
+    clen = name_len - lproj_len;
+    if (clen >= sizeof code)
+        clen = sizeof code - 1;
+    memcpy(code, name, clen);
+    code[clen] = '\0';
+    n = CFArrayGetCount(arr);
+    for (i = 0; i < n; i++) {
+        CFStringRef sr = (CFStringRef)CFArrayGetValueAtIndex(arr, i);
+        char sbuf[128];
+        if (sr == NULL)
+            continue;
+        if (CFStringGetCString(sr, sbuf, sizeof sbuf, kCFStringEncodingUTF8) &&
+            strcmp(sbuf, code) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* Slices of a Mach-O record survive only when their cputype is allowed. */
+static uint32_t keep_slices(uint8_t *dst, const uint8_t *src, uint32_t nslice,
+                            const void *archFilter) {
+    uint32_t i, kept = 0;
+    for (i = 0; i < nslice; i++) {
+        uint32_t cp = _bom_r32(src + 16 * i);
+        if (filter_has_cputype(archFilter, cp)) {
+            memcpy(dst + 16 * kept, src + 16 * i, 16);
+            kept++;
+        }
+    }
+    return kept;
+}
+
+/* Rebuild the archive at outPath from decoded rows, applying the arch and
+ * language filters.  Returns the opened re-encoded bom, or NULL on error. */
+static BOMBom *bom_rebuild_with_options(const char *outPath, BOMBom *bom,
+                                        const void *archFilter,
+                                        const void *langFilter) {
+    BOMTree *t;
+    struct bom_tree_row *r;
+    bom_reenc_row *rows;
+    uint8_t **rawpr;
+    size_t *rawprlen;
+    uint8_t *slicebuf = NULL;
+    uint8_t *rebuild = NULL;
+    size_t rebuild_len = 0;
+    uint32_t i;
+    uint8_t *dropped = NULL;
+    size_t nkeep = 0, slot = 0;
+    uint32_t maxpid = 0;
+    char errbuf[512];
+    BOMBom *b;
+    uint32_t nslice_total = 0;
+
+    t = BOMBomPathsTree(bom);
+    if (t == NULL)
+        return NULL;
+
+    /* Decide drop for every row first: a path is dropped when its parent is
+     * a dropped directory (language pruning propagates down the subtree) or
+     * when an arch filter strips a Mach-O file to zero slices. */
+    for (i = 0; i < t->nrows; i++) {
+        r = &t->rows[i];
+        if (r->pid > maxpid)
+            maxpid = r->pid;
+        nslice_total += r->pr.nslice;
+    }
+    if (t->nrows > 500) { /* single Paths block: 12 + 8*n <= 0x1000 */
+        return NULL;
+    }
+    dropped = (uint8_t *)calloc((size_t)maxpid + 1, 1);
+    rawpr = (uint8_t **)calloc(t->nrows ? t->nrows : 1, sizeof(uint8_t *));
+    rawprlen = (size_t *)calloc(t->nrows ? t->nrows : 1, sizeof(size_t));
+    rows = (bom_reenc_row *)calloc(t->nrows ? t->nrows : 1,
+                                   sizeof(bom_reenc_row));
+    if (dropped == NULL || rawpr == NULL || rawprlen == NULL || rows == NULL)
+        goto fail;
+    slicebuf = (uint8_t *)malloc(16 * (size_t)(nslice_total ? nslice_total : 1));
+    if (slicebuf == NULL)
+        goto fail;
+
+    for (i = 0; i < t->nrows; i++) {
+        uint32_t parent;
+        uint32_t nslice_kept;
+
+        r = &t->rows[i];
+        /* Language pruning: a dropped parent directory drops this path too. */
+        if (r->parent != 0 && r->parent <= maxpid && dropped[r->parent]) {
+            dropped[r->pid] = 1;
+            continue;
+        }
+        if (!lang_allowed(langFilter, r->leaf, r->name_len)) {
+            dropped[r->pid] = 1;
+            continue;
+        }
+        /* Arch pruning: keep only allowed slices. */
+        nslice_kept = r->pr.nslice;
+        if (archFilter != NULL && r->pr.nslice > 0) {
+            nslice_kept = keep_slices(slicebuf, r->pr.slices,
+                                      r->pr.nslice, archFilter);
+            if (nslice_kept == 0) {
+                dropped[r->pid] = 1;
+                continue;
+            }
+        }
+        /* Build the PathRecord bytes this row will emit. */
+        if (archFilter == NULL || r->pr.nslice == 0) {
+            uint32_t prlen;
+            rawpr[slot] = (uint8_t *)bom_block(&bom->storage->bf, r->prblk,
+                                               &prlen);
+            if (rawpr[slot] == NULL)
+                goto fail;
+            rawprlen[slot] = prlen;
+        } else {
+            bom_pathrec pr2;
+            pr2 = r->pr;
+            pr2.slices = slicebuf;
+            pr2.nslice = nslice_kept;
+            if (bom_pr_rebuild(&pr2, &rebuild, &rebuild_len) != 0)
+                goto fail;
+            rawpr[slot] = rebuild;
+            rawprlen[slot] = rebuild_len;
+            rebuild = NULL;
+        }
+        parent = r->parent;
+        rows[slot].pid = r->pid;
+        rows[slot].parent = parent;
+        rows[slot].name = r->leaf;
+        rows[slot].pr = rawpr[slot];
+        rows[slot].prlen = rawprlen[slot];
+        slot++;
+    }
+    nkeep = slot;
+    if (nkeep == 0)
+        goto fail;
+
+    if (bom_reencode(rows, nkeep, outPath, errbuf, sizeof errbuf) != 0)
+        goto fail;
+
+    b = bom_open_common(outPath);
+    if (b != NULL)
+        b->for_write = 0;
+    free(dropped);
+    free(rawpr);
+    free(rawprlen);
+    free(rows);
+    free(slicebuf);
+    free(rebuild);
+    return b;
+
+fail:
+    free(dropped);
+    free(rawpr);
+    free(rawprlen);
+    free(rows);
+    free(slicebuf);
+    free(rebuild);
+    return NULL;
+}
+
 BOMBom *BOMBomNewFromBomWithOptions(const char *outPath, BOMBom *bom,
                                     uint32_t options,
                                     const void *archFilter,
@@ -108,31 +307,33 @@ BOMBom *BOMBomNewFromBomWithOptions(const char *outPath, BOMBom *bom,
     size_t n;
     BOMBom *b;
     (void)options;
-    (void)archFilter;
-    (void)langFilter;
     if (outPath == NULL || bom == NULL || !bom->open || bom->path == NULL)
         return NULL;
-    /* Clone the source file verbatim (filtered re-emit not implemented). */
-    infile = fopen(bom->path, "rb");
-    if (infile == NULL)
-        return NULL;
-    outfile = fopen(outPath, "wb");
-    if (outfile == NULL) {
-        fclose(infile);
-        return NULL;
-    }
-    while ((n = fread(buf, 1, sizeof buf, infile)) > 0)
-        if (fwrite(buf, 1, n, outfile) != n) {
-            fclose(outfile);
+    /* No filters: verbatim copy (byte parity with the source). */
+    if (archFilter == NULL && langFilter == NULL) {
+        infile = fopen(bom->path, "rb");
+        if (infile == NULL)
+            return NULL;
+        outfile = fopen(outPath, "wb");
+        if (outfile == NULL) {
             fclose(infile);
             return NULL;
         }
-    fclose(outfile);
-    fclose(infile);
-    b = bom_open_common(outPath);
-    if (b != NULL)
-        b->for_write = 0;
-    return b;
+        while ((n = fread(buf, 1, sizeof buf, infile)) > 0)
+            if (fwrite(buf, 1, n, outfile) != n) {
+                fclose(outfile);
+                fclose(infile);
+                return NULL;
+            }
+        fclose(outfile);
+        fclose(infile);
+        b = bom_open_common(outPath);
+        if (b != NULL)
+            b->for_write = 0;
+        return b;
+    }
+    /* Filters present: rebuild the archive from decoded rows. */
+    return bom_rebuild_with_options(outPath, bom, archFilter, langFilter);
 }
 
 /* ---- accessors ---- */

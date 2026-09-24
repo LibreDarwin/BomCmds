@@ -25,7 +25,7 @@ MK_OBJS  := $(OBJDIR)/mkbom_main.o
 LS       := $(BUILD_DIR)/lsbom
 LS_OBJS  := $(OBJDIR)/lsbom_main.o
 LIB_OBJS := $(OBJDIR)/bom_cksum.o $(OBJDIR)/fs_walk.o $(OBJDIR)/bom_writer.o $(OBJDIR)/bom_read.o
-LIB_FW_OBJS := $(OBJDIR)/BOMStorage.o $(OBJDIR)/BOMTree.o $(OBJDIR)/BOMFSObject.o $(OBJDIR)/BOMBom.o $(OBJDIR)/BOMCopier.o
+LIB_FW_OBJS := $(OBJDIR)/BOMStorage.o $(OBJDIR)/BOMTree.o $(OBJDIR)/BOMFSObject.o $(OBJDIR)/BOMBom.o $(OBJDIR)/BOMCopier.o $(OBJDIR)/bom_reencode.o
 DI       := $(BUILD_DIR)/ditto
 DI_OBJS  := $(OBJDIR)/ditto_main.o $(OBJDIR)/adouble.o $(OBJDIR)/bomf.o $(OBJDIR)/cpio.o $(OBJDIR)/macho.o $(OBJDIR)/zip.o
 DI_CFLAGS := $(CFLAGS) -Isrc/ditto -Isrc/libbom
@@ -131,6 +131,10 @@ $(OBJDIR)/BOMBom.o: src/libbom/BOMBom.c src/libbom/bom_api.h src/libbom/BOM.h sr
 $(OBJDIR)/BOMCopier.o: src/libbom/BOMCopier.c src/libbom/bom_api.h src/libbom/BOM.h src/libbom/bom_read.h
 	@mkdir -p $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ src/libbom/BOMCopier.c
+
+$(OBJDIR)/bom_reencode.o: src/libbom/bom_reencode.c src/libbom/bom_reencode.h src/libbom/bom_read.h src/libbom/bom_api.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ src/libbom/bom_reencode.c
 
 $(OBJDIR)/ditto_main.o: src/ditto/ditto.c src/ditto/ditto.h src/ditto/usage.inc
 	@mkdir -p $(OBJDIR)
