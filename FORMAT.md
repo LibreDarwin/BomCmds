@@ -118,8 +118,12 @@ Empty path tables (5, 8, 10 with no entries) contain only the 8-byte header
 ```
 u32  version                 # observed 1
 u32  number_of_paths         # highest path_id + 1 (path id 0 is unused); see below
-u32  number_of_info_entries  # 1 when any non-directory inode exists, else 0
-number_of_info_entries * { u32 a; u32 b; u32 c; u32 d }   # observed 0 0 SUM 0
+u32  number_of_info_entries  # 1 + #distinct Mach-O cputypes when any non-directory
+                             # inode exists, else 0
+number_of_info_entries * { u32 a; u32 b; u32 c; u32 d }
+    # entry 0: 0 0 SUM 0, where SUM = sum of non-Mach-O file sizes
+    # then one per distinct Mach-O cputype (in readdir order of first
+    # occurrence): CPUTYPE 0 SIZESUM 0
 ```
 
 - `number_of_paths` = (total paths in the tree) + (#special files that consume
@@ -132,6 +136,14 @@ number_of_info_entries * { u32 a; u32 b; u32 c; u32 d }   # observed 0 0 SUM 0
   files are deduplicated by inode (hard links count once), symlinks are each
   counted with `st_size = strlen(target)`. Verified: fix = 30 (20 + 10), p1 = 1,
   p2 = 3, p6 = 4, hme = 8, y1 = 5 (symlink-only).
+- Mach-O files contribute *zero* to entry 0; instead each distinct cputype
+  observed anywhere in the tree gets its own entry with the summed size of all
+  its slices (thin files whole-file size, fat slices `fat_arch.size`, both
+  deduplicated by inode). The subtype field is always dropped to 0, so arm64
+  and arm64e slices both aggregate under cputype `0x0100000c`. Entries appear
+  in the readdir (pre-order path scan) order of first occurrence. Verified:
+  wnew = x86_64 150183200, i386 (0x7) 4096, arm64/arm64e 142318272,
+  0x07000000 4096.
 - `number_of_info_entries == 0` iff the tree contains only directories
   (`empty.bom`, `q4.bom`); the record is then 12 bytes and `c` is absent.
 

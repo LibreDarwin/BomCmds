@@ -30,6 +30,93 @@ static void w32(uint8_t *p, uint32_t v) {
     p[3] = (uint8_t)v;
 }
 
+static uint32_t r32(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+#define BM_MAXSLICE 64
+
+/* Per-arch slice table entry for a Mach-O file (matches Apple's mkbom). */
+struct bm_mslice {
+    uint32_t cputype;
+    uint32_t subtype;
+    uint64_t off;   /* byte offset of the slice in the file */
+    uint32_t len;   /* slice size */
+    uint32_t cksum;
+};
+
+/* Probe an open regular file for a Mach-O image.  Mirrors what Apple's
+ * mkbom recognizes: the four thin-Mach-O magics (either byte order) and a
+ * big-endian 32-bit universal/fat header (0xcafebabe).  Fat64 and swapped-
+ * endian fat headers are NOT treated as Mach-O by Apple's writer.
+ *
+ * 0  -> not a recognized Mach-O
+ * 1, *fat=0 -> thin Mach-O (single slice; sl[0] sized to the whole file)
+ * >0, *fat=1 -> fat Mach-O (per-slice entries, sizes from the fat header)
+ */
+static int macho_slices(const uint8_t *hdr, size_t hlen, uint64_t fsize,
+                        struct bm_mslice *sl, int maxsl, int *is_fat) {
+    uint32_t magic;
+    if (hlen < 4)
+        return 0;
+    *is_fat = 0;
+    magic = (((uint32_t)hdr[0] << 24) | ((uint32_t)hdr[1] << 16) |
+             ((uint32_t)hdr[2] << 8) | (uint32_t)hdr[3]);
+    switch (magic) {
+    case 0xcefaedfe: /* MH_MAGIC (32-bit, little endian on disk) */
+    case 0xcffaedfe: /* MH_MAGIC_64 (64-bit, little endian on disk) */
+    case 0xfeedface: /* MH_CIGAM (32-bit, big endian on disk) */
+    case 0xfeedfacf: /* MH_CIGAM_64 (64-bit, big endian on disk) */
+        if (hlen < 12 || maxsl < 1)
+            return 0;
+        if (magic == 0xcefaedfe || magic == 0xcffaedfe) {
+            sl[0].cputype = (uint32_t)hdr[4] | ((uint32_t)hdr[5] << 8) |
+                            ((uint32_t)hdr[6] << 16) |
+                            ((uint32_t)hdr[7] << 24);
+            sl[0].subtype = (uint32_t)hdr[8] | ((uint32_t)hdr[9] << 8) |
+                            ((uint32_t)hdr[10] << 16) |
+                            ((uint32_t)hdr[11] << 24);
+        } else {
+            sl[0].cputype = r32(hdr + 4);
+            sl[0].subtype = r32(hdr + 8);
+        }
+        sl[0].off = 0;
+        sl[0].len = (uint32_t)fsize;
+        sl[0].cksum = 0;
+        return 1;
+    case 0xcafebabe: /* FAT_MAGIC */
+        if (hlen < 8 || maxsl < 1)
+            return 0;
+        {
+            uint32_t n = r32(hdr + 4);
+            size_t need;
+            uint32_t i;
+            if (n == 0 || n > (uint32_t)maxsl)
+                return 0;
+            need = 8 + 20 * (size_t)n;
+            if (need > hlen)
+                return 0;
+            *is_fat = 1;
+            for (i = 0; i < n; i++) {
+                const uint8_t *fe = hdr + 8 + 20 * i;
+                uint64_t off = r32(fe + 8);
+                uint32_t len = r32(fe + 12);
+                if (off > fsize || len > fsize - off)
+                    return 0; /* malformed: slices must lie inside the file */
+                sl[i].cputype = r32(fe + 0);
+                sl[i].subtype = r32(fe + 4);
+                sl[i].off = off;
+                sl[i].len = len;
+                sl[i].cksum = 0;
+            }
+            return (int)n;
+        }
+    default:
+        return 0;
+    }
+}
+
 /* ---- blob store: blocks[nob+1], 1-based index ---- */
 
 typedef struct blob_store {
@@ -88,8 +175,12 @@ static int build_pr(const bm_walk *w, uint32_t pid, uint8_t **out,
             return -1;
         bm_cksum_ctx ctx;
         bm_cksum_init(&ctx);
+        uint8_t hdr[4096];
+        size_t hlen = fread(hdr, 1, sizeof(hdr), f);
+        if (hlen != 0)
+            bm_cksum_feed(&ctx, hdr, hlen);
         uint8_t buf[65536];
-        size_t total = 0, got;
+        size_t total = hlen, got;
         while ((got = fread(buf, 1, sizeof(buf), f)) > 0) {
             bm_cksum_feed(&ctx, buf, got);
             total += got;
@@ -99,6 +190,71 @@ static int build_pr(const bm_walk *w, uint32_t pid, uint8_t **out,
         if (err)
             return -1;
         ck = bm_cksum_finish(&ctx, total);
+
+        struct bm_mslice slvec[BM_MAXSLICE];
+        int is_fat = 0;
+        int nsl = macho_slices(hdr, hlen, (uint64_t)n->st.st_size, slvec,
+                               BM_MAXSLICE, &is_fat);
+
+        if (nsl > 0) { /* Mach-O: arch table appended to the record */
+            size_t i, pos;
+            if (is_fat) {
+                /* per-slice checksum over each slice's own bytes */
+                f = fopen(n->path, "rb");
+                if (f == NULL)
+                    return -1;
+                for (i = 0; i < (size_t)nsl; i++) {
+                    bm_cksum_ctx sctx;
+                    bm_cksum_init(&sctx);
+                    uint32_t sgot = 0;
+                    if (fseeko(f, (off_t)slvec[i].off, SEEK_SET) == 0) {
+                        while (sgot < slvec[i].len) {
+                            size_t want = sizeof(buf);
+                            if (want > slvec[i].len - sgot)
+                                want = slvec[i].len - sgot;
+                            size_t r = fread(buf, 1, want, f);
+                            if (r == 0)
+                                break;
+                            bm_cksum_feed(&sctx, buf, r);
+                            sgot += (uint32_t)r;
+                        }
+                    }
+                    slvec[i].cksum = bm_cksum_finish(&sctx, sgot);
+                }
+                fclose(f);
+            } else { /* thin: the whole file is the single slice */
+                slvec[0].off = 0;
+                slvec[0].len = (uint32_t)n->st.st_size;
+                slvec[0].cksum = ck;
+            }
+            size_t reclen = 32 + 16 * (size_t)nsl + 8;
+            uint8_t *rec = (uint8_t *)calloc(reclen, 1);
+            if (rec == NULL)
+                return -1;
+            rec[0] = type;
+            rec[1] = 1;
+            w16(rec + 2, is_fat ? 0x200f : 0x100f);
+            w16(rec + 4, (uint16_t)(n->st.st_mode & 0xffff));
+            w32(rec + 6, (uint32_t)n->st.st_uid);
+            w32(rec + 10, (uint32_t)n->st.st_gid);
+            w32(rec + 14, (uint32_t)n->st.st_mtime);
+            w32(rec + 18, (uint32_t)n->st.st_size);
+            rec[22] = 1;
+            w32(rec + 23, ck);
+            rec[27] = 1; /* arch table flag */
+            w32(rec + 28, (uint32_t)nsl);
+            for (i = 0, pos = 32; i < (size_t)nsl; i++, pos += 16) {
+                w32(rec + pos + 0, slvec[i].cputype);
+                w32(rec + pos + 4, slvec[i].subtype);
+                w32(rec + pos + 8, slvec[i].len);
+                w32(rec + pos + 12, slvec[i].cksum);
+            }
+            /* rec[32+16n .. 39+16n]: linklen + pad (zeros) */
+            *out = rec;
+            *outlen = reclen;
+            return 0;
+        }
+
         tail = calloc(4, 1); /* 4 padding zero bytes: record is 35 bytes */
         if (tail == NULL)
             return -1;
@@ -436,18 +592,30 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
         free(entries);
     }
 
-    /* ---- fixed blocks 1..10 ---- */
+    /* ---- block 1 (BomInfo): header + per-cputype size entries ----
+     * Matching Apple's mkbom:
+     *   - entry 0 is (0, 0, <sum of non-Mach-O file sizes>, 0);
+     *   - one (cputype, 0, <sum of slice sizes>, 0) entry per distinct
+     *     cputype observed, subtype dropped, sizes summed across every
+     *     Mach-O slice (thin files count their whole size, fat slices
+     *     their fat_arch size);
+     *   - entries are emitted in readdir (pre-order path scan) order of
+     *     first occurrence, and each inode is only counted once.
+     */
     size_t ncount = 0; /* non-special count */
-    int ninfo = 0;
+    int has_file = 0;
     for (i = 0; i < npaths; i++) {
         const bm_path *n = &w->paths[i];
         if (n->type == BM_TYPE_SPC)
             continue;
         ncount++;
         if (n->type != BM_TYPE_DIR)
-            ninfo = 1;
+            has_file = 1;
     }
-    uint64_t c = 0;
+    uint64_t plain = 0;
+    uint32_t arcp[BM_MAXSLICE];
+    uint64_t arsz[BM_MAXSLICE];
+    size_t narch = 0;
     uint64_t *keys = (uint64_t *)malloc((ncount ? ncount : 1) *
                                         sizeof(uint64_t));
     size_t nk = 0;
@@ -466,28 +634,73 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
                 seen = 1;
                 break;
             }
-        if (!seen) {
-            keys[nk++] = k;
-            c += (uint64_t)n->st.st_size;
+        if (seen)
+            continue;
+        keys[nk++] = k;
+
+        FILE *f = fopen(n->path, "rb");
+        if (f == NULL) {
+            plain += (uint64_t)n->st.st_size;
+            continue;
+        }
+        uint8_t hdr[4096];
+        size_t hl = fread(hdr, 1, sizeof(hdr), f);
+        fclose(f);
+        struct bm_mslice sl[BM_MAXSLICE];
+        int is_fat = 0;
+        int nsl = macho_slices(hdr, hl, (uint64_t)n->st.st_size, sl,
+                               BM_MAXSLICE, &is_fat);
+        if (nsl <= 0) {
+            plain += (uint64_t)n->st.st_size;
+            continue;
+        }
+        for (j = 0; j < (size_t)nsl; j++) {
+            uint32_t cp = sl[j].cputype;
+            size_t a;
+            int found = 0;
+            for (a = 0; a < narch; a++)
+                if (arcp[a] == cp) {
+                    found = 1;
+                    break;
+                }
+            if (!found) {
+                if (narch >= BM_MAXSLICE)
+                    break;
+                arcp[narch] = cp;
+                arsz[narch] = 0;
+                a = narch;
+                narch++;
+            }
+            arsz[a] += (uint64_t)sl[j].len;
         }
     }
     free(keys);
 
+    int ninfo = has_file ? (int)(1 + narch) : 0;
     uint8_t b1head[12];
     w32(b1head, 1);
     w32(b1head + 4, (uint32_t)(npaths + 1));
     w32(b1head + 8, (uint32_t)ninfo);
-    put(&bs, 1, b1head, 12);
     if (ninfo) {
-        uint8_t b1[28];
-        w32(b1, 1);
-        w32(b1 + 4, (uint32_t)(npaths + 1));
-        w32(b1 + 8, (uint32_t)ninfo);
+        size_t blen = 12 + 16 * (size_t)ninfo;
+        uint8_t *b1 = (uint8_t *)malloc(blen);
+        if (b1 == NULL)
+            goto write_err;
+        memcpy(b1, b1head, 12);
         w32(b1 + 12, 0);
         w32(b1 + 16, 0);
-        w32(b1 + 20, (uint32_t)c);
+        w32(b1 + 20, (uint32_t)plain);
         w32(b1 + 24, 0);
-        put(&bs, 1, b1, 28);
+        for (i = 0; i < (int)narch; i++) {
+            w32(b1 + 28 + 16 * (size_t)i, arcp[i]);
+            w32(b1 + 32 + 16 * (size_t)i, 0);
+            w32(b1 + 36 + 16 * (size_t)i, (uint32_t)arsz[i]);
+            w32(b1 + 40 + 16 * (size_t)i, 0);
+        }
+        put(&bs, 1, b1, blen);
+        free(b1);
+    } else {
+        put(&bs, 1, b1head, 12);
     }
 
     /* blocks 2,3: Paths tree header + main Paths sorted by (parent,name) */

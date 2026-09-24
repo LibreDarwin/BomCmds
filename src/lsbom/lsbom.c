@@ -79,7 +79,8 @@ static const arch_entry kArchs[] = {
     { CPU_TYPE_POWERPC, "ppc" },   { CPU_TYPE_I386, "i386" },
     { CPU_TYPE_HPPA, "hppa" },     { CPU_TYPE_SPARC, "sparc" },
     { CPU_TYPE_POWERPC64, "ppc64" }, { CPU_TYPE_X86_64, "x86_64" },
-    { CPU_TYPE_ARM64, "arm64" },   { CPU_TYPE_X86_64, "x86_64h" },
+    { CPU_TYPE_ARM64, "arm64" },   { CPU_TYPE_ARM64, "arm64e" },
+    { CPU_TYPE_X86_64, "x86_64h" },
     { CPU_TYPE_ANY, "any" },
 };
 
