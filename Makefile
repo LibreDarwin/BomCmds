@@ -25,6 +25,7 @@ MK_OBJS  := $(OBJDIR)/mkbom_main.o
 LS       := $(BUILD_DIR)/lsbom
 LS_OBJS  := $(OBJDIR)/lsbom_main.o
 LIB_OBJS := $(OBJDIR)/bom_cksum.o $(OBJDIR)/fs_walk.o $(OBJDIR)/bom_writer.o $(OBJDIR)/bom_read.o
+LIB_FW_OBJS := $(OBJDIR)/BOMStorage.o $(OBJDIR)/BOMTree.o $(OBJDIR)/BOMFSObject.o $(OBJDIR)/BOMBom.o $(OBJDIR)/BOMCopier.o
 DI       := $(BUILD_DIR)/ditto
 DI_OBJS  := $(OBJDIR)/ditto_main.o $(OBJDIR)/adouble.o $(OBJDIR)/bomf.o $(OBJDIR)/cpio.o $(OBJDIR)/macho.o $(OBJDIR)/zip.o
 DI_CFLAGS := $(CFLAGS) -Isrc/ditto -Isrc/libbom
@@ -73,13 +74,13 @@ $(DI): $(DI_OBJS) $(BOM_FW)
 # compatibility 2.0.0 / current 195.0.0) so our tools link it the same way
 # Apple's do.  Re-sign with `codesign -f -s - Bom.framework` when importing
 # the built framework elsewhere; that rewrites CodeResources and adds a seal.
-$(BOM_FW): $(LIB_OBJS) $(BOM_FW_CFG)
+$(BOM_FW): $(LIB_OBJS) $(LIB_FW_OBJS) $(BOM_FW_CFG)
 	@rm -rf $@
 	@mkdir -p $@/Versions/A/_CodeSignature $@/Versions/A/Resources
 	$(CC) $(CFLAGS) -dynamiclib \
 		-Wl,-install_name,@rpath/Bom.framework/Versions/A/Bom \
 		-Wl,-compatibility_version,2.0.0 -Wl,-current_version,195.0.0 \
-		-o $@/Versions/A/Bom $(LIB_OBJS)
+		-o $@/Versions/A/Bom $(LIB_OBJS) $(LIB_FW_OBJS) -framework CoreFoundation
 	cp src/libbom/Info.plist $@/Versions/A/Resources/
 	cp src/libbom/version.plist $@/Versions/A/Resources/
 	cp src/libbom/CodeResources $@/Versions/A/_CodeSignature/
@@ -110,6 +111,26 @@ $(OBJDIR)/bom_writer.o: src/libbom/bom_writer.c src/libbom/bom_writer.h src/libb
 $(OBJDIR)/bom_read.o: src/libbom/bom_read.c src/libbom/bom_read.h
 	@mkdir -p $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ src/libbom/bom_read.c
+
+$(OBJDIR)/BOMStorage.o: src/libbom/BOMStorage.c src/libbom/bom_api.h src/libbom/BOM.h src/libbom/bom_read.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ src/libbom/BOMStorage.c
+
+$(OBJDIR)/BOMTree.o: src/libbom/BOMTree.c src/libbom/bom_api.h src/libbom/BOM.h src/libbom/bom_read.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ src/libbom/BOMTree.c
+
+$(OBJDIR)/BOMFSObject.o: src/libbom/BOMFSObject.c src/libbom/bom_api.h src/libbom/BOM.h src/libbom/bom_read.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ src/libbom/BOMFSObject.c
+
+$(OBJDIR)/BOMBom.o: src/libbom/BOMBom.c src/libbom/bom_api.h src/libbom/BOM.h src/libbom/bom_read.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ src/libbom/BOMBom.c
+
+$(OBJDIR)/BOMCopier.o: src/libbom/BOMCopier.c src/libbom/bom_api.h src/libbom/BOM.h src/libbom/bom_read.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ src/libbom/BOMCopier.c
 
 $(OBJDIR)/ditto_main.o: src/ditto/ditto.c src/ditto/ditto.h src/ditto/usage.inc
 	@mkdir -p $(OBJDIR)
