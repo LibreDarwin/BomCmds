@@ -53,9 +53,9 @@ additional trailing column.
 Suppress the mode for directories and symbolic links.
 .It Fl -arch Ar archVal
 Print metadata for the given architecture
-.Pq Qq ppc , Qq i386 , Qq hppa , Qq sparc , Qq ppc64 , Qq x86_64 , or Qq any .
-Entries recorded for other architectures are printed with zeroed
-metadata.
+.Pq Qq ppc , Qq i386 , Qq hppa , Qq sparc , Qq ppc64 , Qq x86_64 , Qq x86_64h , Qq arm64 , or Qq any .
+For each Mach-O file the per-architecture values stored in the bom are used;
+entries that do not contain the requested architecture are omitted.
 .It Fl p Ar parameters
 Print only the requested columns, in the order given.
 Any of the following letters may be used, at most once:

@@ -55,9 +55,20 @@ static const char kFullUsage[] =
     "\t\t\t/\tuser id/group id\n"
     "\t\t\t?\tuser name/group name\n";
 
-/* Architecture codes as stored in PathRecord.architecture (FORMAT.md 4.6).
- * 0xf = "any"; unmatched requests produce zeroed metadata (verified). */
-#define ARCH_ANY_MASK 0x0f0f0f0f
+/* --arch names map to Mach-O cpu_type values (slice cputype match; the
+ * stored per-arch table in each Mach-O PathRecord is consulted, FORMAT.md
+ * 4.6).  Matching is by cputype only, so x86_64h (cputype 0x01000007,
+ * subtype 8) matches a stored x86_64 slice (subtype 3).  "any" is a valid
+ * name whose cpu type matches no stored slice, so it drops every binary
+ * row; non-binary rows are never filtered. */
+#define CPU_TYPE_POWERPC    0x00000012
+#define CPU_TYPE_I386       0x00000007
+#define CPU_TYPE_X86_64     0x01000007
+#define CPU_TYPE_HPPA       0x0000000b
+#define CPU_TYPE_SPARC      0x0000000e
+#define CPU_TYPE_POWERPC64  0x01000012
+#define CPU_TYPE_ARM64      0x0100000c
+#define CPU_TYPE_ANY        0x0fffffff
 
 typedef struct {
     uint32_t val;
@@ -65,9 +76,11 @@ typedef struct {
 } arch_entry;
 
 static const arch_entry kArchs[] = {
-    { 0x1, "ppc" },   { 0x2, "i386" },   { 0x3, "hppa" },
-    { 0x4, "sparc" }, { 0x5, "ppc64" },  { 0x6, "x86_64" },
-    { ARCH_ANY_MASK, "any" },
+    { CPU_TYPE_POWERPC, "ppc" },   { CPU_TYPE_I386, "i386" },
+    { CPU_TYPE_HPPA, "hppa" },     { CPU_TYPE_SPARC, "sparc" },
+    { CPU_TYPE_POWERPC64, "ppc64" }, { CPU_TYPE_X86_64, "x86_64" },
+    { CPU_TYPE_ARM64, "arm64" },   { CPU_TYPE_X86_64, "x86_64h" },
+    { CPU_TYPE_ANY, "any" },
 };
 
 typedef struct opts {
@@ -82,12 +95,14 @@ typedef struct opts {
 } opts;
 
 /* One generated Paths-block row of the main ("Paths", "Tree") variable.
- * name points into the file image. */
+ * name points into the file image.  When --arch matched a stored slice,
+ * `slice` points at that 16-byte entry (cputype, subtype, size, checksum)
+ * inside the image so rendering prints the per-arch size/checksum. */
 typedef struct prow {
     uint32_t pid, parent;
     char *name;
     bom_pathrec pr;
-    int arch_ok;
+    const uint8_t *slice;
 } prow;
 
 static uint16_t r16(const uint8_t *p) {
@@ -218,7 +233,6 @@ static int find_var_block(const bom_file *bf, const char *want) {
 static int load_tree(const bom_file *bf, prow **out, size_t *nout,
                      const opts *o) {
     int tree_idx = find_var_block(bf, "Paths");
-    uint32_t want = o->arch_set ? o->arch : 0x6; /* default: x86_64 */
     const uint8_t *tree, *pb;
     uint32_t tree_len, pb_len;
     prow *rows = NULL;
@@ -270,12 +284,27 @@ static int load_tree(const bom_file *bf, prow **out, size_t *nout,
                 row.pr.link = NULL;
                 row.pr.link_len = 0;
                 row.pr.valid = 0;
+                row.slice = NULL;
                 if (bom_pathrec_decode(prb, prl, &row.pr) != 0)
                     continue;
-                row.arch_ok =
-                    (o->arch_set && o->arch == ARCH_ANY_MASK) ||
-                    row.pr.architecture == 0xf ||
-                    row.pr.architecture == want;
+                /* With --arch, a Mach-O row must contain a stored slice
+                 * whose cputype matches; otherwise the row is dropped
+                 * entirely (not zeroed).  Non-binary rows are never
+                 * filtered. */
+                if (o->arch_set && row.pr.nslice > 0) {
+                    uint32_t j;
+                    int found = 0;
+                    for (j = 0; j < row.pr.nslice; j++) {
+                        const uint8_t *s = row.pr.slices + 16 * j;
+                        if (r32(s) == o->arch) {
+                            row.slice = s;
+                            found = 1;
+                            break;
+                        }
+                    }
+                    if (!found)
+                        continue;
+                }
                 if (n == cap) {
                     size_t ncap = cap ? cap * 2 : 256;
                     prow *nr = (prow *)realloc(rows, ncap * sizeof *nr);
@@ -381,15 +410,15 @@ static const char *sym_mode(uint16_t m, char *buf) {
     return buf;
 }
 
-/* Values used for printing; arch mismatch zeroes all metadata (verified). */
+/* Value surface used for printing.  With --arch the matched slice's
+ * size/checksum replace the stored whole-file values; mode/uid/gid/mtime
+ * stay as stored.  Without --arch the stored values are used unchanged
+ * (verified: stored table, not the live file). */
 static void pr_view(const prow *n, bom_pathrec *v) {
     *v = n->pr;
-    if (!n->arch_ok) {
-        v->mode = 0;
-        v->uid = v->gid = 0;
-        v->mtime = v->size = v->checksum = 0;
-        v->link = NULL;
-        v->link_len = 0;
+    if (n->slice != NULL) {
+        v->size = r32(n->slice + 8);
+        v->checksum = r32(n->slice + 12);
     }
 }
 
@@ -402,6 +431,11 @@ static void row_columns(const opts *o, const prow *n, const char *path,
     while (*params != '\0') {
         char c = *params++;
         char tmp[64], un[64], gn[64];
+        /* Apple's columner drops an empty 'S' cell entirely: no value, no
+         * separator, and it does not advance the "first" flag.  All other
+         * empty fields (t/T/c/s) still occupy their tab cell. */
+        if (c == 'S' && v.path_type == BM_PT_DIR)
+            continue;
         if (!first)
             fputc('\t', out);
         first = 0;

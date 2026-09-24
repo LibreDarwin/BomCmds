@@ -27,7 +27,13 @@ typedef struct bom_file {
 } bom_file;
 
 /* Decoded PathRecord (FORMAT.md 4.6). `link` points into the block if
- * link_len > 0, else NULL. */
+ * link_len > 0, else NULL.
+ *
+ * Mach-O files carry a per-architecture slice table after the 27-byte base:
+ * byte 27 = 0x01 flag, bytes 28..31 = BE slice count, then count entries of
+ * 16 bytes each {cputype, subtype, size, checksum} (all BE), then the usual
+ * link-name tail.  nslice is 0 for non-Mach-O records; `slices` points into
+ * the PathRecord block. */
 typedef struct bom_pathrec {
     uint8_t      path_type;
     uint16_t     architecture;
@@ -35,6 +41,8 @@ typedef struct bom_pathrec {
     uint32_t     uid, gid, mtime, size, checksum;
     const uint8_t *link;
     uint32_t     link_len;
+    uint32_t     nslice;
+    const uint8_t *slices;
     int          valid;
 } bom_pathrec;
 

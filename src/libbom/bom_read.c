@@ -161,12 +161,29 @@ int bom_pathrec_decode(const uint8_t *b, uint32_t len, bom_pathrec *pr) {
     pr->mtime = r32(b + 14);
     pr->size = r32(b + 18);
     pr->checksum = r32(b + 23);
-    pr->link_len = r32(b + 27);
-    if (pr->link_len > 0 && pr->link_len <= len - 31) {
-        pr->link = b + 31;
+    /* Mach-O records carry a per-arch table (byte 27 flag 0x01, count at
+     * 28, 16-byte slices from 32) instead of the link name at 27.  The
+     * trailing link tail follows the table. */
+    if (pr->architecture != 0xf && b[27] == 0x01 && len >= 32) {
+        uint32_t count = r32(b + 28);
+        if (count != 0 && count <= (len - 32) / 16) {
+            uint32_t tail = 32 + count * 16;
+            pr->nslice = count;
+            pr->slices = b + 32;
+            if (tail + 4 <= len) {
+                pr->link_len = r32(b + tail);
+                if (pr->link_len > 0 && pr->link_len <= len - tail - 4)
+                    pr->link = b + tail + 4;
+                else
+                    pr->link_len = 0;
+            }
+        }
     } else {
-        pr->link = NULL;
-        pr->link_len = 0;
+        pr->link_len = r32(b + 27);
+        if (pr->link_len > 0 && pr->link_len <= len - 31)
+            pr->link = b + 31;
+        else
+            pr->link_len = 0;
     }
     pr->valid = 1;
     return 0;

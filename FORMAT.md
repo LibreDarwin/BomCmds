@@ -207,6 +207,33 @@ link_name[link_name_length]   # only when link_name_length > 0
 - Regular file: **35 bytes** — an extra 4 zero bytes after `link_name_length`.
 - Symlink: `31 + link_name_length + 8` bytes (link bytes then 8 trailing zero
   bytes). Verified on y1/y4/y5: total lengths 45/52/42/46/60/103.
+- **Mach-O file** (thin or fat): the `architecture` field is `0x100f` (1
+  slice) / `0x200f` (2 slices) — low nibble stays `0xf`, top nibble is the
+  stored slice count — and the tail is replaced by a per-architecture table
+  (see 4.6b). Total: `32 + 16 * nslice + 8` bytes (56 for thin, 72 for 2-slice).
+
+### 4.6b Per-architecture table (Mach-O)
+
+For a Mach-O file the layout continues after the 27-byte base:
+
+```
+u8   b              # 0x01 (arch table flag)
+u32  count          # number of slices
+slice[count]        # each 16 bytes, all BE:
+u32  cputype        # e.g. 0x01000007 x86_64, 0x0100000c arm64
+u32  cpusubtype     # e.g. 3 x86_64, 0 arm64
+u32  size           # that slice's file size (its bytes in the fat file)
+u32  checksum       # BSD cksum of that slice's bytes (see 4.6a)
+u32  link_name_length   # 0 for Mach-O regular files
+u32  link_name_pad      # 4 zero bytes
+```
+
+The base `size`/`checksum` fields (bytes 18/23) always hold the **whole-file**
+values regardless of the slice table.  Verified on `com.apple.metal.bom`
+(`metal-shaderconverter`): whole file 58,493,248 / checksum 0x2D1CB837;
+slices x86_64 `0x01000007`/3/30,036,640/0xD8E7B404 and arm64
+`0x0100000c`/0/28,428,608/0xED62087F.  These are the same values `lipo -info`
+reports for slice sizes and `cksum` computes per slice.
 
 ### 4.6a CRC32 algorithm
 
@@ -333,10 +360,18 @@ contents/sizes match mkbom's. This satisfies the accepted conformance bar.
 - `-p` prints one tab-joined cell per requested letter, order-preserving;
   directories yield empty cells for `t` `T` `s` `S` `c`. `S` groups thousands
   with commas (hardcoded, locale-independent).
-- `--arch` matches PathRecord.architecture: `0xf` (any) matches every request;
-  a non-f entry that does not match the requested arch prints with all-zero
-  metadata (`path\t0\t0/0\t0\t0`); the default (no `--arch`) requests x86_64.
-  Recognized names: ppc, i386, hppa, sparc, ppc64, x86_64, any.
+- `--arch` selects per-architecture values for Mach-O rows from the stored
+  slice table (4.6b) and drops the row entirely if no slice matches.  The
+  `--arch` name maps to a Mach-O `cpu_type`; matching is **cputype only**
+  (subtype ignored), so `x86_64h` matches a stored x86_64 slice (stored
+  subtype 3).  Non-binary rows (`architecture == 0xf`) are never filtered.  A
+  matched row prints the slice's size/checksum; mode/uid/gid/mtime stay as
+  stored.  All values come from the bom, never the live file (deleting the
+  source tree does not change output).  Recognized names: ppc, i386, hppa,
+  sparc, ppc64, x86_64, x86_64h, arm64, any.  `any` never matches a stored
+  slice, so it drops every binary row; ppc/i386/hppa/sparc do too when no
+  such slice is stored.  Unknown names print
+  `Unrecognized architecture <name>` + short usage, rc=1.
 
 ## 10. CPIO archive format (`ditto -c`, `070707` odc)
 
