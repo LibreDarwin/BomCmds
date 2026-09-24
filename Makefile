@@ -28,11 +28,13 @@ LIB_OBJS := $(OBJDIR)/bom_cksum.o $(OBJDIR)/fs_walk.o $(OBJDIR)/bom_writer.o $(O
 DI       := $(BUILD_DIR)/ditto
 DI_OBJS  := $(OBJDIR)/ditto_main.o $(OBJDIR)/adouble.o $(OBJDIR)/bomf.o $(OBJDIR)/cpio.o $(OBJDIR)/macho.o $(OBJDIR)/zip.o
 DI_CFLAGS := $(CFLAGS) -Isrc/ditto -Isrc/libbom
+BOM_FW   := $(BUILD_DIR)/Bom.framework
+BOM_FW_CFG := src/libbom/Info.plist src/libbom/version.plist src/libbom/CodeResources
 
 PREFIX  ?= /usr/local
 DESTDIR ?=
 
-all: $(MK) $(LS) $(DI)
+all: $(MK) $(LS) $(DI) $(BOM_FW)
 
 $(MK): $(MK_OBJS) $(LIB_OBJS)
 	@mkdir -p $(BUILD_DIR)
@@ -45,6 +47,27 @@ $(LS): $(LS_OBJS) $(LIB_OBJS)
 $(DI): $(DI_OBJS) $(OBJDIR)/bom_read.o
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(DI_CFLAGS) -o $@ $^ -lz -lbz2
+
+# Bom.framework: byte-identical replica of Apple's
+# /System/Library/PrivateFrameworks/Bom.framework container (plists,
+# CodeResources, symlinks).  Apple ships no binary (it lives in the dyld
+# shared cache); ours is linked from the libbom objects in its place, and
+# _CodeSignature/CodeResources is the verbatim Apple file (rule-only plist,
+# no hashes).  Re-sign with `codesign -f -s - Bom.framework` when importing
+# the built framework elsewhere; that rewrites CodeResources and adds a seal.
+$(BOM_FW): $(LIB_OBJS) $(BOM_FW_CFG)
+	@rm -rf $@
+	@mkdir -p $@/Versions/A/_CodeSignature $@/Versions/A/Resources
+	$(CC) $(CFLAGS) -dynamiclib \
+		-Wl,-install_name,$(PREFIX)/Library/Frameworks/Bom.framework/Versions/A/Bom \
+		-Wl,-compatibility_version,1.0.0 -Wl,-current_version,1.0.0 \
+		-o $@/Versions/A/Bom $(LIB_OBJS)
+	cp src/libbom/Info.plist $@/Versions/A/Resources/
+	cp src/libbom/version.plist $@/Versions/A/Resources/
+	cp src/libbom/CodeResources $@/Versions/A/_CodeSignature/
+	ln -sfn A $@/Versions/Current
+	ln -sfn Versions/Current/Bom $@/Bom
+	ln -sfn Versions/Current/Resources $@/Resources
 
 $(OBJDIR)/mkbom_main.o: src/mkbom/mkbom.c src/libbom/bom_writer.h src/libbom/fs_walk.h
 	@mkdir -p $(OBJDIR)
@@ -107,6 +130,8 @@ install: all
 	install -m 0444 man/mkbom.1 $(DESTDIR)$(PREFIX)/share/man/man1/mkbom.1
 	install -m 0444 man/lsbom.1 $(DESTDIR)$(PREFIX)/share/man/man1/lsbom.1
 	install -m 0444 man/ditto.1 $(DESTDIR)$(PREFIX)/share/man/man1/ditto.1
+	install -d $(DESTDIR)$(PREFIX)/Library/Frameworks
+	cp -R $(BOM_FW) $(DESTDIR)$(PREFIX)/Library/Frameworks/
 
 clean:
 	rm -rf build

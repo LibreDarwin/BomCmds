@@ -20,6 +20,11 @@
 		1A2B3C6D000000000000008E /* macho.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C6D0000000000000085 /* macho.c */; };
 		1A2B3C6D000000000000008F /* zip.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C6D0000000000000086 /* zip.c */; };
 		1A2B3C6D0000000000000090 /* bom_read.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C5D0000000000000052 /* bom_read.c */; };
+		1A2B3C7D00000000000000A1 /* bom_cksum.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000012 /* bom_cksum.c */; };
+		1A2B3C7D00000000000000A2 /* fs_walk.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000014 /* fs_walk.c */; };
+		1A2B3C7D00000000000000A3 /* bom_writer.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000016 /* bom_writer.c */; };
+		1A2B3C7D00000000000000A4 /* bom_read.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C5D0000000000000052 /* bom_read.c */; };
+		1A2B3C7D00000000000000A5 /* version.plist in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000B2 /* version.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +52,10 @@
 		1A2B3C6D0000000000000088 /* usage.inc */ = {isa = PBXFileReference; lastKnownFileType = text; path = usage.inc; sourceTree = "<group>"; };
 		1A2B3C6D0000000000000089 /* ditto.1 */ = {isa = PBXFileReference; lastKnownFileType = text.man; path = ditto.1; sourceTree = "<group>"; };
 		1A2B3C6D0000000000000091 /* ditto */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = ditto; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A2B3C7D00000000000000B1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000B2 /* version.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = version.plist; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000B3 /* CodeResources */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = CodeResources; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000B4 /* Bom.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Bom.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +84,7 @@
 				1A2B3C4D0000000000000018 /* mkbom */,
 				1A2B3C5D0000000000000054 /* lsbom */,
 				1A2B3C6D0000000000000091 /* ditto */,
+				1A2B3C7D00000000000000B4 /* Bom.framework */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -101,6 +111,9 @@
 				1A2B3C4D0000000000000017 /* bom_writer.h */,
 				1A2B3C5D0000000000000052 /* bom_read.c */,
 				1A2B3C5D0000000000000053 /* bom_read.h */,
+				1A2B3C7D00000000000000B1 /* Info.plist */,
+				1A2B3C7D00000000000000B2 /* version.plist */,
+				1A2B3C7D00000000000000B3 /* CodeResources */,
 			);
 			path = libbom;
 			sourceTree = "<group>";
@@ -197,6 +210,24 @@
 			productReference = 1A2B3C6D0000000000000091 /* ditto */;
 			productType = "com.apple.product-type.tool";
 		};
+		1A2B3C7D00000000000000B5 /* Bom */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A2B3C7D00000000000000B6 /* Build configuration list for PBXNativeTarget "Bom" */;
+			buildPhases = (
+				1A2B3C7D00000000000000B7 /* Sources */,
+				1A2B3C4D000000000000003A /* Frameworks */,
+				1A2B3C7D00000000000000B8 /* Resources */,
+				1A2B3C7D00000000000000B9 /* Copy CodeResources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Bom;
+			productName = Bom;
+			productReference = 1A2B3C7D00000000000000B4 /* Bom.framework */;
+			productType = "com.apple.product-type.framework";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -222,6 +253,7 @@
 				1A2B3C4D0000000000000031 /* mkbom */,
 				1A2B3C5D0000000000000071 /* lsbom */,
 				1A2B3C6D0000000000000093 /* ditto */,
+				1A2B3C7D00000000000000B5 /* Bom */,
 			);
 		};
 /* End PBXProject section */
@@ -264,6 +296,46 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+
+		1A2B3C7D00000000000000B7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A2B3C7D00000000000000A1 /* bom_cksum.c in Sources */,
+				1A2B3C7D00000000000000A2 /* fs_walk.c in Sources */,
+				1A2B3C7D00000000000000A3 /* bom_writer.c in Sources */,
+				1A2B3C7D00000000000000A4 /* bom_read.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+/* Begin PBXResourcesBuildPhase section */
+		1A2B3C7D00000000000000B8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A2B3C7D00000000000000A5 /* version.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		1A2B3C7D00000000000000B9 /* Copy CodeResources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Copy CodeResources";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "mkdir -p \"$BUILT_PRODUCTS_DIR/$WRAPPER_NAME/Versions/A/_CodeSignature\"\ncp \"$SRCROOT/src/libbom/CodeResources\" \"$BUILT_PRODUCTS_DIR/$WRAPPER_NAME/Versions/A/_CodeSignature/CodeResources\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
 		1A2B3C4D0000000000000035 /* Debug */ = {
@@ -407,6 +479,54 @@
 			};
 			name = Release;
 		};
+		1A2B3C7D00000000000000BA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DYLIB_COMPATIBILITY_VERSION = 1.0.0;
+				DYLIB_CURRENT_VERSION = 1.0.0;
+				FRAMEWORK_VERSION = A;
+				GCC_C_LANGUAGE_STANDARD = c11;
+				INFOPLIST_FILE = src/libbom/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				MACH_O_TYPE = mh_dylib;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_CFLAGS = (
+					"-D_DARWIN_C_SOURCE",
+					"-Wall",
+					"-Wextra",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.apple.bom";
+				PRODUCT_NAME = Bom;
+				SKIP_INSTALL = NO;
+			};
+			name = Debug;
+		};
+		1A2B3C7D00000000000000BB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				DYLIB_COMPATIBILITY_VERSION = 1.0.0;
+				DYLIB_CURRENT_VERSION = 1.0.0;
+				FRAMEWORK_VERSION = A;
+				GCC_C_LANGUAGE_STANDARD = c11;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				INFOPLIST_FILE = src/libbom/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				MACH_O_TYPE = mh_dylib;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_CFLAGS = (
+					"-D_DARWIN_C_SOURCE",
+					"-Wall",
+					"-Wextra",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.apple.bom";
+				PRODUCT_NAME = Bom;
+				SKIP_INSTALL = NO;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -442,6 +562,15 @@
 			buildConfigurations = (
 				1A2B3C6D0000000000000096 /* Debug */,
 				1A2B3C6D0000000000000097 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A2B3C7D00000000000000B6 /* Build configuration list for PBXNativeTarget "Bom" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A2B3C7D00000000000000BA /* Debug */,
+				1A2B3C7D00000000000000BB /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

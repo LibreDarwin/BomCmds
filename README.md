@@ -15,6 +15,14 @@ the on-disk `.bom` format and the tools that read and write it:
                      listing with `-i`) and emit a `.bom`.
   - `lsbom`        - pretty-print a `.bom` (path, mode, uid/gid,
                      size/mtime, checksums, tree/bom views).
+  - `ditto`        - directory archiver/extractor reproducing Apple's
+                     cpio (`-c`), PKZip (`-k`), gzip (`-z`) and
+                     bzip2 (`-j`) byte formats plus the `--arch`
+                     thinning and copy semantics.
+  - `Bom.framework` - byte-identical replica of Apple's private
+                     framework container (Info.plist, version.plist,
+                     CodeResources, symlinks) with the libbom objects
+                     linked into `Versions/A/Bom`.
 
 ## Why clean-room
 
@@ -33,14 +41,24 @@ implementation.  Compliance is proven by round-trip tests: our
 
 ## Layout
 
-    bom/    the library (store, block table, index, fs objects)
-    cmd/    the command tools (mkbom, lsbom)
-    tests/  round-trip and conformance fixtures
+    src/libbom/     the library (store, block table, index, fs objects),
+                    plus the framework metadata (Info.plist, version.plist,
+                    CodeResources) committed byte-for-byte from Apple's
+                    private framework
+    src/mkbom/      the mkbom command
+    src/lsbom/      the lsbom command
+    src/ditto/      the ditto command
+    tools/          conformance batteries (mkbom/lsbom/ditto)
+    man/            manual pages
 
 ## Building
 
-    make            # builds libbom.a, mkbom, lsbom
-    make test       # round-trip and conformance checks
+    make            # builds mkbom, lsbom, ditto and Bom.framework
+    make test       # round-trip and conformance checks (all three tools)
+    make install    # binaries + man pages; framework -> $(PREFIX)/Library/Frameworks
+
+    # Alternative build system (Xcode):
+    xcodebuild -project BomCmds.xcodeproj -target X build    # X in {mkbom, lsbom, ditto, Bom}
 
 ## License
 

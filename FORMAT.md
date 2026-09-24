@@ -536,3 +536,40 @@ Verified against the oracle (macOS 15/16 ditto):
   mtime/atime; two tools only produce byte-identical archives when they are
   run from the same extracted tree within the same wall-clock second. Beyond
   that window the battery compares structurally (ignoring mtimes).
+
+## 17. `Bom.framework` container
+
+The built `Bom.framework` is a byte-identical replica of Apple's private
+`/System/Library/PrivateFrameworks/Bom.framework` container on macOS 26.5.
+On that system Apple's framework ships **no code and no headers** on disk
+(the dylib lives in the dyld shared cache); only the container remains:
+
+```
+Bom.framework/
+  Bom -> Versions/Current/Bom           (symlink, target "Versions/Current/Bom")
+  Resources -> Versions/Current/Resources (symlink)
+  Versions/
+    Current -> A                        (symlink)
+    A/
+      _CodeSignature/CodeResources      byte-identical to Apple's (rule-only
+                                        plist, no file hashes)
+      Bom                               our dylib linked from the libbom objects
+      Resources/
+        Info.plist                      byte-identical (com.apple.bom, CFBundle
+                                        ShortVersionString 14.0, CFBundleVersion
+                                        277, LSMinimumSystemVersion 26.5)
+        version.plist                   byte-identical (BuildVersion 3135)
+```
+
+- `src/libbom/{Info.plist,version.plist,CodeResources}` are committed
+  byte-for-byte from the reference (verify with `cmp`); `shasum -a 256`
+  matches the reference files exactly.
+- There is intentionally **no `Headers/`** directory — Apple ships none, so
+  shipping ours would break byte identity. The public headers stay in
+  `src/libbom/` for the tool builds.
+- No `versions` plist key; Apple's `Info.plist` carries no
+  `CFBundleVersion`-dependent symlink at framework top level either.
+- Signing: builds leave `_CodeSignature/CodeResources` as the verbatim Apple
+  file and do **not** re-sign. Import the built framework elsewhere with
+  `codesign -f -s - Bom.framework`, which rewrites `CodeResources` and adds a
+  seal; the dylib itself has no signature either way.
