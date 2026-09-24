@@ -56,6 +56,7 @@
 		1A2B3C7D00000000000000B2 /* version.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = version.plist; sourceTree = "<group>"; };
 		1A2B3C7D00000000000000B3 /* CodeResources */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = CodeResources; sourceTree = "<group>"; };
 		1A2B3C7D00000000000000B4 /* Bom.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Bom.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A2B3C7D00000000000000BD /* Bom.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000B4 /* Bom.framework */; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,7 +67,33 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1A2B3C7D00000000000000BC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A2B3C7D00000000000000BD /* Bom.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		1A2B3C7D00000000000000BE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1A2B3C4D0000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1A2B3C7D00000000000000B5;
+			remoteInfo = Bom;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		1A2B3C7D00000000000000BF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1A2B3C7D00000000000000B5 /* Bom */;
+			targetProxy = 1A2B3C7D00000000000000BE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXGroup section */
 		1A2B3C4D0000000000000002 = {
@@ -167,11 +194,12 @@
 			buildConfigurationList = 1A2B3C4D0000000000000033 /* Build configuration list for PBXNativeTarget "mkbom" */;
 			buildPhases = (
 				1A2B3C4D0000000000000032 /* Sources */,
-				1A2B3C4D000000000000003A /* Frameworks */,
+				1A2B3C7D00000000000000BC /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				1A2B3C7D00000000000000BF /* PBXTargetDependency */,
 			);
 			name = mkbom;
 			productName = mkbom;
@@ -183,11 +211,12 @@
 			buildConfigurationList = 1A2B3C5D0000000000000073 /* Build configuration list for PBXNativeTarget "lsbom" */;
 			buildPhases = (
 				1A2B3C5D0000000000000072 /* Sources */,
-				1A2B3C4D000000000000003A /* Frameworks */,
+				1A2B3C7D00000000000000BC /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				1A2B3C7D00000000000000BF /* PBXTargetDependency */,
 			);
 			name = lsbom;
 			productName = lsbom;
@@ -199,11 +228,12 @@
 			buildConfigurationList = 1A2B3C6D0000000000000094 /* Build configuration list for PBXNativeTarget "ditto" */;
 			buildPhases = (
 				1A2B3C6D0000000000000095 /* Sources */,
-				1A2B3C4D000000000000003A /* Frameworks */,
+				1A2B3C7D00000000000000BC /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				1A2B3C7D00000000000000BF /* PBXTargetDependency */,
 			);
 			name = ditto;
 			productName = ditto;
@@ -264,9 +294,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A2B3C4D0000000000000021 /* mkbom.c in Sources */,
-				1A2B3C4D0000000000000022 /* bom_cksum.c in Sources */,
-				1A2B3C4D0000000000000023 /* fs_walk.c in Sources */,
-				1A2B3C4D0000000000000024 /* bom_writer.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -277,7 +304,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A2B3C5D0000000000000061 /* lsbom.c in Sources */,
-				1A2B3C5D0000000000000062 /* bom_read.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -292,7 +318,6 @@
 				1A2B3C6D000000000000008D /* cpio.c in Sources */,
 				1A2B3C6D000000000000008E /* macho.c in Sources */,
 				1A2B3C6D000000000000008F /* zip.c in Sources */,
-				1A2B3C6D0000000000000090 /* bom_read.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -484,12 +509,12 @@
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DYLIB_COMPATIBILITY_VERSION = 1.0.0;
-				DYLIB_CURRENT_VERSION = 1.0.0;
+				DYLIB_COMPATIBILITY_VERSION = 2.0.0;
+				DYLIB_CURRENT_VERSION = 195.0.0;
 				FRAMEWORK_VERSION = A;
 				GCC_C_LANGUAGE_STANDARD = c11;
 				INFOPLIST_FILE = src/libbom/Info.plist;
-				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				INSTALL_PATH = /System/Library/PrivateFrameworks;
 				MACH_O_TYPE = mh_dylib;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_CFLAGS = (
@@ -507,13 +532,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
-				DYLIB_COMPATIBILITY_VERSION = 1.0.0;
-				DYLIB_CURRENT_VERSION = 1.0.0;
+				DYLIB_COMPATIBILITY_VERSION = 2.0.0;
+				DYLIB_CURRENT_VERSION = 195.0.0;
 				FRAMEWORK_VERSION = A;
 				GCC_C_LANGUAGE_STANDARD = c11;
 				GCC_OPTIMIZATION_LEVEL = 3;
 				INFOPLIST_FILE = src/libbom/Info.plist;
-				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				INSTALL_PATH = /System/Library/PrivateFrameworks;
 				MACH_O_TYPE = mh_dylib;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_CFLAGS = (

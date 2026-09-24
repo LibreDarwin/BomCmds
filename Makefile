@@ -28,39 +28,57 @@ LIB_OBJS := $(OBJDIR)/bom_cksum.o $(OBJDIR)/fs_walk.o $(OBJDIR)/bom_writer.o $(O
 DI       := $(BUILD_DIR)/ditto
 DI_OBJS  := $(OBJDIR)/ditto_main.o $(OBJDIR)/adouble.o $(OBJDIR)/bomf.o $(OBJDIR)/cpio.o $(OBJDIR)/macho.o $(OBJDIR)/zip.o
 DI_CFLAGS := $(CFLAGS) -Isrc/ditto -Isrc/libbom
-BOM_FW   := $(BUILD_DIR)/Bom.framework
+BOM_FW     := $(BUILD_DIR)/Bom.framework
+BOM_FW_DYLIB := $(BOM_FW)/Versions/A/Bom
 BOM_FW_CFG := src/libbom/Info.plist src/libbom/version.plist src/libbom/CodeResources
 
 PREFIX  ?= /usr/local
 DESTDIR ?=
 
+# Like Apple's binaries (/usr/bin/mkbom, /usr/bin/lsbom, /usr/bin/ditto all
+# load Bom.framework), the tools link the Bom.framework dylib instead of
+# statically bundling libbom.
+#
+# The dylib's identity is @rpath, not Apple's absolute install path: on any
+# macOS with Apple's dyld shared cache, an absolute /System/... identity
+# resolves to Apple's cached Bom -- which does not export the bm_* API our
+# tools call (e.g. bm_scan) -- and DYLD_LIBRARY_PATH cannot override the
+# cache.  @rpath makes the tools resolve to OUR dylib from the build tree,
+# and to the staged root when installed to /System/Library/PrivateFrameworks
+# on LibreDarwin.  The framework *container* (plists, CodeResources,
+# symlinks) remains byte-identical to Apple's; only the dylib identity
+# differs, and that string is not part of the byte-identity contract.
+RPATHS := -Wl,-rpath,$(CURDIR)/$(BUILD_DIR) -Wl,-rpath,/System/Library/PrivateFrameworks
+
 all: $(MK) $(LS) $(DI) $(BOM_FW)
 
-$(MK): $(MK_OBJS) $(LIB_OBJS)
+$(MK): $(MK_OBJS) $(BOM_FW)
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $(MK_OBJS) $(BOM_FW_DYLIB) $(RPATHS)
 
-$(LS): $(LS_OBJS) $(LIB_OBJS)
+$(LS): $(LS_OBJS) $(BOM_FW)
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $(LS_OBJS) $(BOM_FW_DYLIB) $(RPATHS)
 
-$(DI): $(DI_OBJS) $(OBJDIR)/bom_read.o
+$(DI): $(DI_OBJS) $(BOM_FW)
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $(DI_CFLAGS) -o $@ $^ -lz -lbz2
+	$(CC) $(DI_CFLAGS) -o $@ $(DI_OBJS) $(BOM_FW_DYLIB) $(RPATHS) -lz -lbz2
 
 # Bom.framework: byte-identical replica of Apple's
 # /System/Library/PrivateFrameworks/Bom.framework container (plists,
 # CodeResources, symlinks).  Apple ships no binary (it lives in the dyld
 # shared cache); ours is linked from the libbom objects in its place, and
 # _CodeSignature/CodeResources is the verbatim Apple file (rule-only plist,
-# no hashes).  Re-sign with `codesign -f -s - Bom.framework` when importing
+# no hashes).  The dylib carries Apple's exact identity (install_name,
+# compatibility 2.0.0 / current 195.0.0) so our tools link it the same way
+# Apple's do.  Re-sign with `codesign -f -s - Bom.framework` when importing
 # the built framework elsewhere; that rewrites CodeResources and adds a seal.
 $(BOM_FW): $(LIB_OBJS) $(BOM_FW_CFG)
 	@rm -rf $@
 	@mkdir -p $@/Versions/A/_CodeSignature $@/Versions/A/Resources
 	$(CC) $(CFLAGS) -dynamiclib \
-		-Wl,-install_name,$(PREFIX)/Library/Frameworks/Bom.framework/Versions/A/Bom \
-		-Wl,-compatibility_version,1.0.0 -Wl,-current_version,1.0.0 \
+		-Wl,-install_name,@rpath/Bom.framework/Versions/A/Bom \
+		-Wl,-compatibility_version,2.0.0 -Wl,-current_version,195.0.0 \
 		-o $@/Versions/A/Bom $(LIB_OBJS)
 	cp src/libbom/Info.plist $@/Versions/A/Resources/
 	cp src/libbom/version.plist $@/Versions/A/Resources/
@@ -117,10 +135,23 @@ $(OBJDIR)/zip.o: src/ditto/zip.c src/ditto/ditto.h
 	@mkdir -p $(OBJDIR)
 	$(CC) $(DI_CFLAGS) -c -o $@ src/ditto/zip.c
 
-test: all
-	python3 tools/prototype/run_tests.py --subject $(MK)
-	python3 tools/prototype/run_tests.py --subject-lsbom --lsbom $(LS)
-	python3 tools/prototype/run_ditto_tests.py --subject $(DI)
+test: all check-link
+	@export DYLD_LIBRARY_PATH=$(CURDIR)/$(BUILD_DIR); \
+		python3 tools/prototype/run_tests.py --subject $(MK) && \
+		python3 tools/prototype/run_tests.py --subject-lsbom --lsbom $(LS) && \
+		python3 tools/prototype/run_ditto_tests.py --subject $(DI)
+
+# The tools must resolve to our library, not Apple's shared cache: the test
+# target exports DYLD_LIBRARY_PATH=$(BUILD_DIR) so utilities launched from a
+# scratch working directory (the ditto harness runs with cwd=work) find OUR
+# dylib, and this asserts the LC_LOAD references are wired to Bom.framework at
+# build time.
+check-link:
+	@for t in $(MK) $(LS) $(DI); do \
+		otool -l $$t | grep -q 'libBom\|Bom.framework/Versions/A/Bom' || { \
+			echo "$$t: not linked to Bom.framework"; exit 1; }; \
+	done
+	@echo "mkbom/lsbom/ditto -> Bom.framework OK"
 
 install: all
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/man/man1
@@ -130,10 +161,10 @@ install: all
 	install -m 0444 man/mkbom.1 $(DESTDIR)$(PREFIX)/share/man/man1/mkbom.1
 	install -m 0444 man/lsbom.1 $(DESTDIR)$(PREFIX)/share/man/man1/lsbom.1
 	install -m 0444 man/ditto.1 $(DESTDIR)$(PREFIX)/share/man/man1/ditto.1
-	install -d $(DESTDIR)$(PREFIX)/Library/Frameworks
-	cp -R $(BOM_FW) $(DESTDIR)$(PREFIX)/Library/Frameworks/
+	install -d $(DESTDIR)/System/Library/PrivateFrameworks
+	cp -R $(BOM_FW) $(DESTDIR)/System/Library/PrivateFrameworks/
 
 clean:
 	rm -rf build
 
-.PHONY: all test install clean
+.PHONY: all test check-link install clean
