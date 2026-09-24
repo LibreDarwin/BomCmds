@@ -50,7 +50,7 @@ $(OBJDIR)/bom_writer.o: src/libbom/bom_writer.c src/libbom/bom_writer.h src/libb
 	$(CC) $(CFLAGS) -c -o $@ src/libbom/bom_writer.c
 
 test: all
-	python3 prototype/run_tests.py --subject $(MK)
+	python3 tools/prototype/run_tests.py --subject $(MK)
 
 install: all
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/man/man1
