@@ -337,3 +337,202 @@ contents/sizes match mkbom's. This satisfies the accepted conformance bar.
   a non-f entry that does not match the requested arch prints with all-zero
   metadata (`path\t0\t0/0\t0\t0`); the default (no `--arch`) requests x86_64.
   Recognized names: ppc, i386, hppa, sparc, ppc64, x86_64, any.
+
+## 10. CPIO archive format (`ditto -c`, `070707` odc)
+
+All numeric fields are octal ASCII. There is **no per-entry padding**: each
+entry is `header(76) + name(namesize, NUL-terminated) + data(filesize)`, next
+header immediately after. Trailer entry `TRAILER!!!` (name size 11 incl NUL),
+all numeric fields 0, nlink=1; then the whole stream is zero-padded up to the
+next 512-byte multiple (the pad is part of `-c`, and of `-z`/`-j` — see §12).
+
+Header field layout (offsets within the 76-byte header):
+
+| offset | size | field |
+|--------|------|-------|
+| 0 | 6 | magic `070707` |
+| 6 | 6 | dev |
+| 12 | 6 | ino |
+| 18 | 6 | mode |
+| 24 | 6 | uid |
+| 30 | 6 | gid |
+| 36 | 6 | nlink |
+| 42 | 6 | rdev |
+| 48 | 11 | mtime (octal) |
+| 59 | 6 | namesize (incl trailing NUL) |
+| 65 | 11 | filesize |
+
+Field semantics (verified against oracle):
+- `inos` are sequential synthetic counters 0..N-1, assigned in entry order and
+  shared across a whole archive run (e.g. `c.cpio` inos for 12 entries are
+  0..11, with `TRAILER!!!` taking the next value 11).
+- Hard-linked files: both entries carry the **same ino**, and **both carry the
+  data copy** (nlink=2 on each, size/data repeated) — verified `hl2.cpio`.
+- Dir `nlink` = 2 + number of direct children in the source dir (not st_nlink
+  semantics: `c/` has 4 children → nlink 6; `c/sub` has 1 child → 3).
+- `._dir` sidecar inherits the dir's nlink; files' sidecars nlink=1; symlinks
+  nlink=1.
+- Symlinks: mode `0120755`, filesize = len(target), content = target bytes.
+- mtime is the source mtime (octal) — no mtime=0, no atime in CPIO.
+- Entry order = `readdir` order of the source directory; per directory the
+  order is `[dir, <children...>, ._dir]` where each child is emitted as
+  `[<name>, <._name>]` (sidecar immediately after its item). `.` root is the
+  first entry with name `"."`. No atime is stored in CPIO headers.
+
+## 11. AppleDouble `._` sidecar + ATTR blob
+
+The AppleDouble file backing each `._name` entry. Layout of the 50-byte header:
+
+| offset | size | field |
+|--------|------|-------|
+| 0 | 4 | magic `0005 1607` (BE) |
+| 4 | 4 | version `0002 0000` |
+| 8 | 16 | filler: `"Mac OS X"` + 8 spaces |
+| 24 | 2 | nentries (always 2) |
+| 26 | 24 | entries: `{u32 type, u32 offset, u32 length}` ×2 |
+
+Two entries always present: entry 0 type 0x9 (AppleDouble attributes -> the
+ATTR blob), entry 1 type 0x2 (resource fork). For files without a resource
+fork, entry 1 has `offset = EOF (total file size)` and `length = 0`; with a
+resource fork it holds the fork bytes (`offset = 163, length = fork size`,
+verified `_data.bin` size 181 = 163 + 18 fork bytes).
+
+ATTR blob (entry-0 payload):
+- 32 bytes FinderInfo (zeros) + 2 bytes pad
+- `'ATTR'` magic at blob+34
+- `debug_tag` u32 (0) at +38, `total_size` u32 = whole AD file size at +42,
+  `data_start` u32 at +46 (file-offset of the value area), `data_length` u32
+  (sum of value sizes) at +50, `reserved[3]` at +54, u16 `flags`=0 at +66,
+  u16 `num_attrs` at +68.
+- Records follow at blob+70: each `{u32 offset, u32 length, u16 flags, u8
+  namelen incl NUL, name..., pad-to-4}` where record length =
+  `((11 + namelen + 3) & ~3)`.
+- Record offsets are **absolute offsets within the whole AD file** (50-byte
+  header + blob index). Values are packed contiguously in value area, in
+  `listxattr` order, ending exactly at EOF.
+- Verified sizes: 0 xattrs→ no sidecar; provenance-only → 163-byte AD (blob
+  113); provenance + 1 xattr → 193 (blob 143); provenance + 3 xattrs → 247
+  (blob 197: `v`@212 len1, provenance@213 len11, `long`@224 len21, `xy`@245
+  len2).
+- `com.apple.provenance`: on-disk value is **11 bytes** `01 02 00 1b e2 9d 29
+  ad 6b aa b4` (matches `xattr -x`); the AppleDouble stores the same 11 bytes
+  verbatim. The 8-byte tail `1b e2 9d 29 ad 6b aa b4` is a constant signature
+  present on every provenance sample (system-generated on new files too).
+- `--norsrc` suppresses AppleDouble sidecars entirely (including dir `._path`
+  entries) but `com.apple.provenance` still round-trips because APFS
+  regenerates it on extraction; user xattrs are lost.
+- Resource fork: stored in AD entry-1 (type 2), round-trips through `-x`.
+
+## 12. `-z` / `-j` wrappers
+
+- `-z`: standard gzip over the **fully padded** CPIO stream (incl. trailing
+  zero pad to 512). Header `1f 8b 08 00 | mtime=0 (4B) | XFL=0 | OS=3 (Unix)`,
+  raw deflate payload == zlib level 6. File name flag never set. Decompressed
+  inner == `-c` output exactly.
+- `-j`: bzip2 (`BZh91AY&SY…`, block size 9), inner == `-c` output exactly.
+- `-z -k` is an error: `ditto: -z is only for cpio archives`.
+- `-x` accepts `-z`/`-j` (matching the magic) and yields the same result as
+  `-x` of the plain `-c` archive.
+
+## 13. PKZip (`-k`) — ditto's zip writer
+
+Entries are stored **without** the `./` prefix (CPIO uses `./`, zip uses bare
+relative names) and dirs get a trailing `/`; no `.` root entry. Entry order
+and sidecar pairing match CPIO exactly.
+
+Local header: `PK\x03\x04`, version-needed 10 (stored) / 20 (deflated),
+flags 0 (stored) / 0x8 (deflated → data descriptor follows), method 0
+(stored) / 8 (deflate), DOS timestamp (see below), then crc/comp/uncomp
+= 0 for deflated (in descriptor, bit 3 set) / real for stored. Extra field
+`0x5855` (12 bytes): atime(4) + mtime(4) + uid(2) + gid(2) — unix seconds,
+LE. **Central directory** extra is `0x5855` 8 bytes (atime+mtime only, no
+uid/gid).
+
+Central header: `PK\x01\x02`, version made-by `0x0315` (unix/2.1), version
+needed 10/20 matching compression, flags/method as local, DOS timestamp,
+real crc/comp/uncomp, external attrs = `mode << 16 | 0x4000` (low word is
+0x4000 const). Data descriptor: `PK\x07\x08` + crc + comp + uncomp.
+
+- DOS timestamp = source mtime encoded `(dosDate << 16) | dosTime`, i.e. high
+  word = `((year-1980) << 9) | (month << 5) | day`, low word =
+  `(hour << 11) | (min << 5) | (sec/2)`, with seconds **rounded up to the
+  next even second** (`(sec+1)/2`, carries) — verified `03:04:09 -> 03:04:10`,
+  `03:04:59 -> 03:05:00`.
+- Compressed with zlib deflate level 6 (raw, no zlib header); verified
+  byte-identical across stored streams incl. a 34K semi-compressible file
+  where levels 5 and 7 differ.
+- Stored-vs-deflated rule: directories(method 0), symlinks(method 0), and
+  empty files(method 0); regular non-empty files → deflate (method 8).
+- Symlink entry: mode `0120755`, content = target, **stored**; no `0x5855`
+  extra field (empty extra), but DOS timestamp still present.
+- `-c -z -k` (gzip+zip) unsupported (error, see §12).
+- On `-x -k`, ditto splits zip members at the `_` sidecar pairs to apply
+  resources and re-creates symlinks from the symlink entries.
+
+## 14. `-x` extraction behavior (oracle)
+
+- Header: `>>> Copying <src>\n` (src is the archive path as invoked).
+- `-x` verbose lines: `copying file ./name ... `, `N bytes for ./name`.
+  AppleDouble members print `N bytes for ./name__` (**two** trailing
+  underscores, no trailing space) — the `_` marks the EA/AppleDouble pass.
+- Symlink entries: `copying symlink ./name ... ` at member position, then
+  `linked ./name` **after** all files (deferred to end). Regular file copies
+  print `copying file` + `N bytes for` immediately.
+- Extraction mtime source: the `0x5855` unix seconds (exact), not DOS
+  (verified odd-second round-trips exactly); resource forks restored; sidecar
+  (._) members are consumed to set xattrs, not left as files.
+- `-x -k` paths have no `./` prefix; `-x` of CPIO/gzip/bzip2 print `./`-prefixed
+  names.
+
+## 15. `--arch` thinning (copy mode)
+
+- `ditto --arch <name> src dst`: for Mach-O **fat** inputs, writes the
+  requested slice byte-identical to the source slice file; for already-thin
+  matching inputs, copies as-is (byte-identical); full dir copies recurse with
+  the flag set.
+- Unknown name: `ditto: can't get arch info for '<name>'` then
+  `ditto: Could not parse the Mach-O architectures to copy`, rc=1.
+- `-V` header shows the arch in brackets: `>>> Copying thin.univ [arm64]`.
+- Slice extraction does not alter the slice bytes; dst mtime set from src,
+  dst atime = now. Recognized names: ppc, i386, hppa, sparc, ppc64, x86_64,
+  any (per §9 table).
+
+## 16. Create-side oracle rules (`ditto -c`)
+
+Verified against the oracle (macOS 15/16 ditto):
+
+- **Orphan `._` entries are dropped at create.** Non-directory entries whose
+  name begins with `._` in a source directory are skipped entirely (no member,
+  no sidecar) — verified with a `._leading` file: oracle cpio emits neither
+  `._leading` nor `._._leading`. This applies to both CPIO and PKZip.
+- **`._`-prefixed directories are archived normally** (with contents and their
+  own `._._name` sidecar).
+- **Symlink sources are followed.** `ditto -c <symlink> dst` resolves the link;
+  the target's content is archived under the **target's** basename
+  (`lk -> real` yields member `./real`, not `./lk`). A symlink to a directory
+  archives the directory contents (the resolved dir becomes the archive root,
+  same as `-c <dir>`). If `realpath()` fails (broken link): `ditto: Cannot get
+  the real path for source '<src>'` (echoes the argument verbatim), rc=1, no
+  output. Applies to cpio, zip, and `-z`/`-j`.
+- **Direct `._`-named non-directory sources are rejected** with the same
+  `Cannot get the real path` error — except that a symlink named `._x` whose
+  target resolves to a non-`._` name is accepted (the check runs on the
+  resolved basename).
+- **Broken symlinks inside a directory** are archived as normal symlink
+  members (readlink content), no error.
+- **Header echo**: `-V -c <symlink> dst` prints `>>> Copying <symlink>` (the
+  original argument), then `copying file ./<targetbase> ... `.
+- The zip `0x5855` extras carry the **real atime** of the source on every
+  member (sidecars included); atime != mtime on live files.
+- **Multi-archive `-x` oracle bug (not replicated):** when any archive contains
+  directory members with `._` sidecars, the oracle fails the second archive at
+  its top-level `._` members with `ditto: da2//._e: No such file or directory`
+  (double-slash path, partial extraction, rc=1) — a plain single-archive `-x`
+  of the same archive succeeds. Our tool extracts correctly (rc=0); the
+  conformance battery therefore uses file-only multi-archive fixtures and this
+  oracle defect is documented, not copied.
+- `-x -k` on a non-PKZip input: `ditto: Couldn't read PKZip signature`, rc=1.
+- **rearch byte-identity caveat:** oracle zip/cpio `-c` embeds the source
+  mtime/atime; two tools only produce byte-identical archives when they are
+  run from the same extracted tree within the same wall-clock second. Beyond
+  that window the battery compares structurally (ignoring mtimes).

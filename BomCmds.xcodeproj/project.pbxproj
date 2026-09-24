@@ -13,6 +13,13 @@
 		1A2B3C4D0000000000000024 /* bom_writer.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000016 /* bom_writer.c */; };
 		1A2B3C5D0000000000000061 /* lsbom.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C5D0000000000000051 /* lsbom.c */; };
 		1A2B3C5D0000000000000062 /* bom_read.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C5D0000000000000052 /* bom_read.c */; };
+		1A2B3C6D000000000000008A /* ditto.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C6D0000000000000081 /* ditto.c */; };
+		1A2B3C6D000000000000008B /* adouble.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C6D0000000000000082 /* adouble.c */; };
+		1A2B3C6D000000000000008C /* bomf.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C6D0000000000000083 /* bomf.c */; };
+		1A2B3C6D000000000000008D /* cpio.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C6D0000000000000084 /* cpio.c */; };
+		1A2B3C6D000000000000008E /* macho.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C6D0000000000000085 /* macho.c */; };
+		1A2B3C6D000000000000008F /* zip.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C6D0000000000000086 /* zip.c */; };
+		1A2B3C6D0000000000000090 /* bom_read.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C5D0000000000000052 /* bom_read.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +37,16 @@
 		1A2B3C5D0000000000000053 /* bom_read.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bom_read.h; sourceTree = "<group>"; };
 		1A2B3C5D0000000000000054 /* lsbom */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = lsbom; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A2B3C5D0000000000000055 /* lsbom.1 */ = {isa = PBXFileReference; lastKnownFileType = text.man; path = lsbom.1; sourceTree = "<group>"; };
+		1A2B3C6D0000000000000081 /* ditto.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ditto.c; sourceTree = "<group>"; };
+		1A2B3C6D0000000000000082 /* adouble.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = adouble.c; sourceTree = "<group>"; };
+		1A2B3C6D0000000000000083 /* bomf.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = bomf.c; sourceTree = "<group>"; };
+		1A2B3C6D0000000000000084 /* cpio.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = cpio.c; sourceTree = "<group>"; };
+		1A2B3C6D0000000000000085 /* macho.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = macho.c; sourceTree = "<group>"; };
+		1A2B3C6D0000000000000086 /* zip.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = zip.c; sourceTree = "<group>"; };
+		1A2B3C6D0000000000000087 /* ditto.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ditto.h; sourceTree = "<group>"; };
+		1A2B3C6D0000000000000088 /* usage.inc */ = {isa = PBXFileReference; lastKnownFileType = text; path = usage.inc; sourceTree = "<group>"; };
+		1A2B3C6D0000000000000089 /* ditto.1 */ = {isa = PBXFileReference; lastKnownFileType = text.man; path = ditto.1; sourceTree = "<group>"; };
+		1A2B3C6D0000000000000091 /* ditto */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = ditto; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,6 +74,7 @@
 			children = (
 				1A2B3C4D0000000000000018 /* mkbom */,
 				1A2B3C5D0000000000000054 /* lsbom */,
+				1A2B3C6D0000000000000091 /* ditto */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -67,6 +85,7 @@
 				1A2B3C4D0000000000000009 /* libbom */,
 				1A2B3C4D000000000000000A /* mkbom */,
 				1A2B3C5D0000000000000081 /* lsbom */,
+				1A2B3C6D0000000000000092 /* ditto */,
 			);
 			path = src;
 			sourceTree = "<group>";
@@ -102,11 +121,27 @@
 			path = lsbom;
 			sourceTree = "<group>";
 		};
+		1A2B3C6D0000000000000092 /* ditto */ = {
+			isa = PBXGroup;
+			children = (
+				1A2B3C6D0000000000000081 /* ditto.c */,
+				1A2B3C6D0000000000000082 /* adouble.c */,
+				1A2B3C6D0000000000000083 /* bomf.c */,
+				1A2B3C6D0000000000000084 /* cpio.c */,
+				1A2B3C6D0000000000000085 /* macho.c */,
+				1A2B3C6D0000000000000086 /* zip.c */,
+				1A2B3C6D0000000000000087 /* ditto.h */,
+				1A2B3C6D0000000000000088 /* usage.inc */,
+			);
+			path = ditto;
+			sourceTree = "<group>";
+		};
 		1A2B3C4D0000000000000007 /* man */ = {
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D0000000000000019 /* mkbom.1 */,
 				1A2B3C5D0000000000000055 /* lsbom.1 */,
+				1A2B3C6D0000000000000089 /* ditto.1 */,
 			);
 			path = man;
 			sourceTree = "<group>";
@@ -146,6 +181,22 @@
 			productReference = 1A2B3C5D0000000000000054 /* lsbom */;
 			productType = "com.apple.product-type.tool";
 		};
+		1A2B3C6D0000000000000093 /* ditto */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A2B3C6D0000000000000094 /* Build configuration list for PBXNativeTarget "ditto" */;
+			buildPhases = (
+				1A2B3C6D0000000000000095 /* Sources */,
+				1A2B3C4D000000000000003A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ditto;
+			productName = ditto;
+			productReference = 1A2B3C6D0000000000000091 /* ditto */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -170,6 +221,7 @@
 			targets = (
 				1A2B3C4D0000000000000031 /* mkbom */,
 				1A2B3C5D0000000000000071 /* lsbom */,
+				1A2B3C6D0000000000000093 /* ditto */,
 			);
 		};
 /* End PBXProject section */
@@ -194,6 +246,21 @@
 			files = (
 				1A2B3C5D0000000000000061 /* lsbom.c in Sources */,
 				1A2B3C5D0000000000000062 /* bom_read.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+		1A2B3C6D0000000000000095 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A2B3C6D000000000000008A /* ditto.c in Sources */,
+				1A2B3C6D000000000000008B /* adouble.c in Sources */,
+				1A2B3C6D000000000000008C /* bomf.c in Sources */,
+				1A2B3C6D000000000000008D /* cpio.c in Sources */,
+				1A2B3C6D000000000000008E /* macho.c in Sources */,
+				1A2B3C6D000000000000008F /* zip.c in Sources */,
+				1A2B3C6D0000000000000090 /* bom_read.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -290,6 +357,56 @@
 			};
 			name = Release;
 		};
+		1A2B3C6D0000000000000096 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				EXECUTABLE_PREFIX = "";
+				GCC_C_LANGUAGE_STANDARD = c11;
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/src",
+					"$(SRCROOT)/src/ditto",
+					"$(SRCROOT)/src/libbom",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_CFLAGS = (
+					"-D_DARWIN_C_SOURCE",
+					"-Wall",
+					"-Wextra",
+				);
+				OTHER_LDFLAGS = (
+					"-lz",
+					"-lbz2",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		1A2B3C6D0000000000000097 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				EXECUTABLE_PREFIX = "";
+				GCC_C_LANGUAGE_STANDARD = c11;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/src",
+					"$(SRCROOT)/src/ditto",
+					"$(SRCROOT)/src/libbom",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				OTHER_CFLAGS = (
+					"-D_DARWIN_C_SOURCE",
+					"-Wall",
+					"-Wextra",
+				);
+				OTHER_LDFLAGS = (
+					"-lz",
+					"-lbz2",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -316,6 +433,15 @@
 			buildConfigurations = (
 				1A2B3C5D0000000000000074 /* Debug */,
 				1A2B3C5D0000000000000075 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A2B3C6D0000000000000094 /* Build configuration list for PBXNativeTarget "ditto" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A2B3C6D0000000000000096 /* Debug */,
+				1A2B3C6D0000000000000097 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

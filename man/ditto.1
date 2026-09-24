@@ -1,0 +1,118 @@
+.\" Copyright (C) 2026, LibreDarwin
+.\" SPDX-License-Identifier: BSD-3-Clause
+.Dd September 24, 2026
+.Dt DITTO 1
+.Os
+.Sh NAME
+.Nm ditto
+.Nd copy files and directories, and create and extract archive files
+.Sh SYNOPSIS
+.Nm
+.Op Ar options
+.Ar src
+.Op Ar src Ar ...
+.Ar dst
+.Sh DESCRIPTION
+The
+.Nm
+utility copies
+.Ar src
+files and directories to
+.Ar dst .
+By default it copies the contents of a source directory rather than the
+directory itself, preserves resource data and extended attributes, and
+copies symbolic links as symbolic links.
+.Pp
+If
+.Ar src
+is a directory, its contents are copied.
+If
+.Ar src
+is a file or symbolic link it is copied as that file.
+Multiple
+.Ar src
+arguments copy each source into the destination directory.
+.Pp
+With
+.Fl c ,
+.Nm
+creates an archive at
+.Ar dst
+instead of copying.
+The default archive format is CPIO (odc format).
+Only one source may be given with
+.Fl c ,
+and unlike a straight copy the archive embeds the basename of the source
+so it can be recreated on extraction.
+.Pp
+With
+.Fl x ,
+.Fl c
+is inverted and
+.Ar src
+is an archive from which entries are extracted into the destination
+directory.
+The archive format is chosen automatically unless
+.Fl k
+is given.
+.Pp
+The following options are supported:
+.Bl -tag -width Ds
+.It Fl h , -help
+Print usage information and exit.
+.It Fl v
+Print a status line for each source processed.
+.It Fl V
+Print a status line for every file processed.
+.It Fl c
+Create an archive at
+.Ar dst
+(CPIO format unless
+.Fl k
+is given).
+.It Fl x
+Extract archives instead of copying.
+.It Fl z
+Use gzip compression when creating a CPIO archive.
+.It Fl j
+Use bzip2 compression when creating a CPIO archive.
+.It Fl k
+Create the archive in PKZip format.
+.It Fl keepParent
+Embed the parent directory name of
+.Ar src
+in the archive so that extraction recreates it.
+.El
+.Pp
+Extended attribute (AppleDouble) data is stored next to each entry both
+when copying to an archive and when extracting, and
+.Fl z /
+.Fl j
+wrappers are byte-identical to the corresponding output of Apple's
+ditto for ordinary directory trees.
+.Sh EXIT STATUS
+.Ex -std
+.Sh ENVIRONMENT
+.Bl -tag -width DITTOABORT
+.It Ev DITTONORSRC
+Do not preserve any filesystem metadata.
+.El
+.Sh SEE ALSO
+.Xr mkbom 1 ,
+.Xr lsbom 1
+.Sh HISTORY
+This implementation is a clean-room rewrite of the classic
+.Nm
+utility.
+Only the core option set listed above is implemented; the full
+.BomCopier
+option space
+.Pq Xo
+.Fl Fl arch ,
+.Fl Fl bom ,
+.Fl Fl lang ,
+.Fl Fl rsr c Ns -family
+.Xc
+is not implemented yet.
+.Sh AUTHORS
+.An LibreDarwin

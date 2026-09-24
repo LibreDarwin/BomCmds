@@ -1,6 +1,6 @@
 # Copyright (C) 2026, LibreDarwin
 # SPDX-License-Identifier: BSD-3-Clause
-# Clean-room reimplementation of mkbom/lsbom.
+# Clean-room reimplementation of mkbom/lsbom/ditto.
 #
 # Build layout: every artifact lives under build/; final tools go to
 # build/release/ or build/debug/ per CONFIG.
@@ -25,11 +25,14 @@ MK_OBJS  := $(OBJDIR)/mkbom_main.o
 LS       := $(BUILD_DIR)/lsbom
 LS_OBJS  := $(OBJDIR)/lsbom_main.o
 LIB_OBJS := $(OBJDIR)/bom_cksum.o $(OBJDIR)/fs_walk.o $(OBJDIR)/bom_writer.o $(OBJDIR)/bom_read.o
+DI       := $(BUILD_DIR)/ditto
+DI_OBJS  := $(OBJDIR)/ditto_main.o $(OBJDIR)/adouble.o $(OBJDIR)/bomf.o $(OBJDIR)/cpio.o $(OBJDIR)/macho.o $(OBJDIR)/zip.o
+DI_CFLAGS := $(CFLAGS) -Isrc/ditto -Isrc/libbom
 
 PREFIX  ?= /usr/local
 DESTDIR ?=
 
-all: $(MK) $(LS)
+all: $(MK) $(LS) $(DI)
 
 $(MK): $(MK_OBJS) $(LIB_OBJS)
 	@mkdir -p $(BUILD_DIR)
@@ -38,6 +41,10 @@ $(MK): $(MK_OBJS) $(LIB_OBJS)
 $(LS): $(LS_OBJS) $(LIB_OBJS)
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $^
+
+$(DI): $(DI_OBJS) $(OBJDIR)/bom_read.o
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(DI_CFLAGS) -o $@ $^ -lz -lbz2
 
 $(OBJDIR)/mkbom_main.o: src/mkbom/mkbom.c src/libbom/bom_writer.h src/libbom/fs_walk.h
 	@mkdir -p $(OBJDIR)
@@ -63,16 +70,43 @@ $(OBJDIR)/bom_read.o: src/libbom/bom_read.c src/libbom/bom_read.h
 	@mkdir -p $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ src/libbom/bom_read.c
 
+$(OBJDIR)/ditto_main.o: src/ditto/ditto.c src/ditto/ditto.h src/ditto/usage.inc
+	@mkdir -p $(OBJDIR)
+	$(CC) $(DI_CFLAGS) -c -o $@ src/ditto/ditto.c
+
+$(OBJDIR)/adouble.o: src/ditto/adouble.c src/ditto/ditto.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(DI_CFLAGS) -c -o $@ src/ditto/adouble.c
+
+$(OBJDIR)/bomf.o: src/ditto/bomf.c src/ditto/ditto.h src/libbom/bom_read.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(DI_CFLAGS) -c -o $@ src/ditto/bomf.c
+
+$(OBJDIR)/cpio.o: src/ditto/cpio.c src/ditto/ditto.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(DI_CFLAGS) -c -o $@ src/ditto/cpio.c
+
+$(OBJDIR)/macho.o: src/ditto/macho.c src/ditto/ditto.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(DI_CFLAGS) -c -o $@ src/ditto/macho.c
+
+$(OBJDIR)/zip.o: src/ditto/zip.c src/ditto/ditto.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(DI_CFLAGS) -c -o $@ src/ditto/zip.c
+
 test: all
 	python3 tools/prototype/run_tests.py --subject $(MK)
 	python3 tools/prototype/run_tests.py --subject-lsbom --lsbom $(LS)
+	python3 tools/prototype/run_ditto_tests.py --subject $(DI)
 
 install: all
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/man/man1
 	install -m 0755 $(MK) $(DESTDIR)$(PREFIX)/bin/mkbom
 	install -m 0755 $(LS) $(DESTDIR)$(PREFIX)/bin/lsbom
+	install -m 0755 $(DI) $(DESTDIR)$(PREFIX)/bin/ditto
 	install -m 0444 man/mkbom.1 $(DESTDIR)$(PREFIX)/share/man/man1/mkbom.1
 	install -m 0444 man/lsbom.1 $(DESTDIR)$(PREFIX)/share/man/man1/lsbom.1
+	install -m 0444 man/ditto.1 $(DESTDIR)$(PREFIX)/share/man/man1/ditto.1
 
 clean:
 	rm -rf build
