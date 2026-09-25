@@ -115,7 +115,7 @@ LIBBOM_HIDDEN uint32_t _bom_storage_var_block(const BOMStorage *s,
 /* One row of a NewWithSys tree that has not been committed yet: the raw
  * PathRecord bytes to emit plus the path bookkeeping.  `pid`/`parent` are
  * the ORIGINAL path ids the row is holding (never reused, so removal leaves
- * no dangling references); bom_reencode renumbers from them at commit. */
+ * no dangling references); bom_reencode keeps them verbatim at commit. */
 struct bom_pend_row {
     char       *path;      /* full "./..." path (owned) */
     char       *leaf;      /* leaf name (owned); root row: "." */

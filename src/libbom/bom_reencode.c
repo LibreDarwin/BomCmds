@@ -8,8 +8,12 @@
  * block 11, no hard-link group trailers).  Rows carry the raw PathRecord
  * bytes to emit (built by the caller, e.g. via bom_pr_rebuild), so they are
  * reproduced verbatim; block 1 BomInfo is recomputed from the decoded
- * records' own slice tables.  Rows must be supplied parent-before-child,
- * which the source tree's (parent,name)-sorted storage order satisfies. */
+ * records' own slice tables.  Rows must be supplied parent-before-child in
+ * (parent,name)-sorted key order, which the source tree's storage order and
+ * BOMBomFree's pend_cmp qsort both satisfy.  Rows keep their original
+ * (source) pids: sparse, source-order ids match how Apple lays out its own
+ * archives, and re- numbering would corrupt the (parent,name) key sort that
+ * this tree's interior nodes assume. */
 #include "bom_reencode.h"
 
 #include <errno.h>
@@ -20,6 +24,7 @@
 #define BM_POOL 2730
 #define BM_FIXED_START 0x200
 #define BM_TREE_PAD 0x1000
+#define BM_LEAF_CAP 266
 
 /* ---- endian helpers ---- */
 
@@ -173,50 +178,61 @@ int bom_pr_rebuild(const bom_pathrec *pr, uint8_t **out, size_t *outlen) {
     return 0;
 }
 
-/* ---- pid renumbering ---- */
+/* ---- row validation ---- */
 
-static int renumber(const bom_reenc_row *rows, size_t nrows, uint32_t **map,
-                    uint32_t **parents) {
-    /* new pid for row i is i+1; build old-pid -> new-pid lookup. */
+static int validate_rows(const bom_reenc_row *rows, size_t nrows,
+                         uint32_t *maxpid_out) {
+    /* Check the structural invariants that make the emitted tree readable:
+     * pids must be unique, every parent must reference an existing row, and
+     * the rows must arrive in (parent,name)-sorted key order (the writer's
+     * storage order / pend_cmp qsort), because Apple's reader navigates the
+     * tree by binary-searching its interior key-block ids.  Pids are kept
+     * as supplied (sparse is fine: see Apple's own archives); renumbering
+     * here is what used to corrupt the key order. */
     uint32_t maxpid = 0;
     size_t i;
-    uint32_t *np;
-    uint32_t *pp;
+    uint32_t *seen;
 
     for (i = 0; i < nrows; i++)
         if (rows[i].pid > maxpid)
             maxpid = rows[i].pid;
-    np = (uint32_t *)calloc((size_t)maxpid + 1, sizeof(uint32_t));
-    pp = (uint32_t *)malloc(nrows * sizeof(uint32_t));
-    if (np == NULL || pp == NULL) {
-        free(np);
-        free(pp);
+    if (rows[0].pid != 1 || rows[0].parent != 0)
         return -1;
-    }
-    for (i = 0; i < nrows; i++)
-        np[rows[i].pid] = (uint32_t)i + 1; /* row 0 must be the root */
+    seen = (uint32_t *)calloc((size_t)maxpid + 1, sizeof(uint32_t));
+    if (seen == NULL)
+        return -1;
     for (i = 0; i < nrows; i++) {
-        uint32_t p = rows[i].parent;
-        if (p == 0) {
-            if (rows[i].pid != 1) {
-                free(pp);
-                free(np);
-                errno = EINVAL;
-                return -1;
-            }
-            pp[i] = 0;
-        } else {
-            if (p > maxpid || np[p] == 0) {
-                free(pp);
-                free(np);
-                errno = EINVAL;
-                return -1;
-            }
-            pp[i] = np[p];
+        uint32_t p = rows[i].pid;
+        if (p > maxpid || p == 0) {
+            free(seen);
+            return -1;
+        }
+        if (seen[p] != 0) {
+            free(seen);
+            return -1;
+        }
+        seen[p] = 1;
+    }
+    for (i = 1; i < nrows; i++) {
+        uint32_t pp = rows[i].parent;
+        /* parent must exist (or be the root's 0) */
+        if (pp != 0 && (pp > maxpid || seen[pp] == 0)) {
+            free(seen);
+            return -1;
+        }
+        /* keys must be non-decreasing in (parent, name) byte order */
+        if (rows[i].parent < rows[i - 1].parent) {
+            free(seen);
+            return -1;
+        }
+        if (rows[i].parent == rows[i - 1].parent &&
+            strcmp(rows[i].name, rows[i - 1].name) < 0) {
+            free(seen);
+            return -1;
         }
     }
-    *parents = pp;
-    *map = np;
+    free(seen);
+    *maxpid_out = maxpid;
     return 0;
 }
 
@@ -280,8 +296,7 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
     blob_store bs;
     size_t ncount = nrows;
     size_t i;
-    uint32_t *new_of_old = NULL;
-    uint32_t *new_parent = NULL;
+    uint32_t maxpid = 0;
     int *pridx = NULL, *fidx = NULL, *piidx = NULL;
     int nob = 0, idx, rc = -1;
     bominfo bi;
@@ -290,25 +305,11 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
         errbuf[0] = '\0';
 
     if (rows == NULL || out_path == NULL || nrows == 0 ||
-        rows[0].pid != 1 || rows[0].parent != 0) {
+        validate_rows(rows, nrows, &maxpid) != 0) {
         if (errbuf && errbufsz)
             snprintf(errbuf, errbufsz, "invalid row set");
         return -1;
     }
-    /* Single Paths block: 12-byte header + 8 bytes per entry must fit. */
-    if (nrows > 500) {
-        if (errbuf && errbufsz)
-            snprintf(errbuf, errbufsz,
-                     "too many rows for a single Paths block");
-        return -1;
-    }
-
-    if (renumber(rows, nrows, &new_of_old, &new_parent) != 0) {
-        if (errbuf && errbufsz)
-            snprintf(errbuf, errbufsz, "invalid pid/parent numbering");
-        return -1;
-    }
-    (void)new_of_old;
 
     bominfo_from_rows(rows, nrows, &bi);
     {
@@ -319,9 +320,9 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
         w32(b1head + 8, (uint32_t)ninfo);
 
         /* block-index simulation: one triplet per row, from block 11 */
-        pridx = (int *)malloc((nrows + 1) * sizeof(int));
-        fidx = (int *)malloc((nrows + 1) * sizeof(int));
-        piidx = (int *)malloc((nrows + 1) * sizeof(int));
+        pridx = (int *)malloc(((size_t)maxpid + 1) * sizeof(int));
+        fidx = (int *)malloc(((size_t)maxpid + 1) * sizeof(int));
+        piidx = (int *)malloc(((size_t)maxpid + 1) * sizeof(int));
         if (pridx == NULL || fidx == NULL || piidx == NULL) {
             if (errbuf && errbufsz)
                 snprintf(errbuf, errbufsz, "out of memory");
@@ -329,13 +330,22 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
         }
         idx = 11;
         for (i = 0; i < ncount; i++) {
-            uint32_t pid = (uint32_t)i + 1;
+            uint32_t pid = rows[i].pid;
             pridx[pid] = idx;
             fidx[pid] = idx + 1;
             piidx[pid] = idx + 2;
             idx += 3;
         }
         nob = idx - 1;
+        {
+            /* Chained Paths trees reserve extra blocks after the content
+             * area: leaves 1..nleaves-1 plus one interior node. */
+            size_t nleaves = 1;
+            if (ncount > BM_LEAF_CAP)
+                nleaves = (ncount + BM_LEAF_CAP - 1) / BM_LEAF_CAP;
+            if (nleaves > 1)
+                nob += (int)nleaves;
+        }
         if (blobs_init(&bs, nob) != 0) {
             if (errbuf && errbufsz)
                 snprintf(errbuf, errbufsz, "out of memory");
@@ -344,7 +354,7 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
 
         /* ---- content emission (mirrors bm_write_bom) ---- */
         for (i = 0; i < ncount; i++) {
-            uint32_t pid = (uint32_t)i + 1;
+            uint32_t pid = rows[i].pid;
             size_t nl = strlen(rows[i].name);
             uint8_t *f = (uint8_t *)malloc(4 + nl + 1);
             uint8_t pii[8];
@@ -353,7 +363,7 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
                     snprintf(errbuf, errbufsz, "out of memory");
                 goto out;
             }
-            w32(f, new_parent[i]);
+            w32(f, rows[i].parent);
             memcpy(f + 4, rows[i].name, nl + 1);
             if (put(&bs, fidx[pid], f, 4 + nl + 1) != 0) {
                 free(f);
@@ -369,7 +379,7 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
         }
         /* second pass: patch each PII with its own PR index (no groups) */
         for (i = 0; i < ncount; i++) {
-            uint32_t pid = (uint32_t)i + 1;
+            uint32_t pid = rows[i].pid;
             uint8_t pii[8];
             w32(pii, pid);
             w32(pii + 4, (uint32_t)pridx[pid]);
@@ -408,37 +418,90 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
                 goto out;
         }
 
-        /* blocks 2,3: Paths tree header + main Paths {@pii,@file} */
+        /* blocks 2,3(+): Paths tree header + paths in the decoded order,
+         * which is parent-before-child (the writer's (parent,name)-sorted
+         * storage order).  nleaves == 1 keeps the historical single-leaf
+         * layout (bpi = block 3); nleaves > 1 emits a chained leaf list plus
+         * one interior node whose trailing word is the final leaf block. */
         {
+            size_t base_nob = (size_t)idx - 1;
+            size_t nleaves = 1;
+            if (ncount > BM_LEAF_CAP)
+                nleaves = (ncount + BM_LEAF_CAP - 1) / BM_LEAF_CAP;
+            uint32_t bpi = 3;
+            for (size_t lk = 0; lk < nleaves; lk++) {
+                size_t start = lk * BM_LEAF_CAP;
+                size_t count = (ncount - start < BM_LEAF_CAP)
+                                   ? ncount - start
+                                   : BM_LEAF_CAP;
+                uint32_t blk = (lk == 0) ? 3 : (uint32_t)(base_nob + lk);
+                uint32_t nxt = (lk + 1 >= nleaves)
+                                   ? 0
+                                   : (uint32_t)((lk + 1 == 0) ? 3 : base_nob + lk + 1);
+                uint32_t prv = (lk == 0)
+                                   ? 0
+                                   : (uint32_t)((lk - 1 == 0) ? 3 : base_nob + lk - 1);
+                uint8_t *leaf = (uint8_t *)calloc(BM_TREE_PAD, 1);
+                if (leaf == NULL) {
+                    if (errbuf && errbufsz)
+                        snprintf(errbuf, errbufsz, "out of memory");
+                    goto out;
+                }
+                w16(leaf, 1); /* is_pi: leaf */
+                w16(leaf + 2, (uint16_t)count);
+                w32(leaf + 4, nxt);
+                w32(leaf + 8, prv);
+                for (i = 0; i < count; i++) {
+                    uint32_t pid = rows[start + i].pid;
+                    w32(leaf + 12 + 8 * i, (uint32_t)piidx[pid]);
+                    w32(leaf + 16 + 8 * i, (uint32_t)fidx[pid]);
+                }
+                if (put(&bs, blk, leaf, BM_TREE_PAD) != 0) {
+                    free(leaf);
+                    goto out;
+                }
+                free(leaf);
+            }
+            if (nleaves > 1) {
+                uint8_t *node = (uint8_t *)calloc(BM_TREE_PAD, 1);
+                if (node == NULL) {
+                    if (errbuf && errbufsz)
+                        snprintf(errbuf, errbufsz, "out of memory");
+                    goto out;
+                }
+                w16(node, 0);
+                w16(node + 2, (uint16_t)(nleaves - 1));
+                w32(node + 4, 0);
+                w32(node + 8, 0);
+                for (size_t lk = 0; lk < nleaves - 1; lk++) {
+                    size_t end = (size_t)(lk + 1) * BM_LEAF_CAP;
+                    if (end > ncount)
+                        end = ncount;
+                    uint32_t blk = (lk == 0) ? 3 : (uint32_t)(base_nob + lk);
+                    uint32_t pid = rows[end - 1].pid; /* last row of leaf lk */
+                    w32(node + 12 + 8 * lk, blk);
+                    w32(node + 16 + 8 * lk, (uint32_t)fidx[pid]);
+                }
+                w32(node + 12 + 8 * (nleaves - 1),
+                    (uint32_t)(base_nob + nleaves - 1));
+                if (put(&bs, (uint32_t)(base_nob + nleaves), node,
+                        BM_TREE_PAD) != 0) {
+                    free(node);
+                    goto out;
+                }
+                free(node);
+                bpi = (uint32_t)(base_nob + nleaves);
+            }
+
             uint8_t b2[21];
             memset(b2, 0, sizeof(b2));
             memcpy(b2, "tree", 4);
             w32(b2 + 4, 1);
-            w32(b2 + 8, 3);
+            w32(b2 + 8, bpi);
             w32(b2 + 12, BM_TREE_PAD);
             w32(b2 + 16, (uint32_t)ncount);
             if (put(&bs, 2, b2, sizeof(b2)) != 0)
                 goto out;
-        }
-        {
-            uint8_t *b3 = (uint8_t *)calloc(BM_TREE_PAD, 1);
-            if (b3 == NULL) {
-                if (errbuf && errbufsz)
-                    snprintf(errbuf, errbufsz, "out of memory");
-                goto out;
-            }
-            w16(b3, 1);
-            w16(b3 + 2, (uint16_t)ncount);
-            for (i = 0; i < ncount; i++) {
-                uint32_t pid = (uint32_t)i + 1;
-                w32(b3 + 12 + 8 * i, (uint32_t)piidx[pid]);
-                w32(b3 + 16 + 8 * i, (uint32_t)fidx[pid]);
-            }
-            if (put(&bs, 3, b3, BM_TREE_PAD) != 0) {
-                free(b3);
-                goto out;
-            }
-            free(b3);
         }
 
         /* blocks 4,5: HLIndex (empty: no hard-link groups) */
@@ -534,8 +597,6 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
 out:
     blobs_free(&bs);
 out_early:
-    free(new_of_old);
-    free(new_parent);
     free(pridx);
     free(fidx);
     free(piidx);
@@ -550,7 +611,10 @@ static int write_bom_file(const char *out_path, const blob_store *bs, int nob,
     uint8_t *index, *vars, *header;
     FILE *fp = NULL;
     int i;
-    size_t indexlen = 4 + (size_t)BM_POOL * 8 + 4;
+    size_t pool = BM_POOL;
+    while (pool < (size_t)nob + 1)
+        pool *= 2;
+    size_t indexlen = 4 + pool * 8 + 4;
     size_t varslen = 4 + 12 + 10 + 12 + 11 + 11;
     uint8_t pad[BM_FIXED_START - 32];
     int rc = -1;
@@ -574,8 +638,8 @@ static int write_bom_file(const char *out_path, const blob_store *bs, int nob,
             off += bs->len[i];
         }
 
-    /* index: BM_POOL free-list slots, all present, none free */
-    w32(index, (uint32_t)BM_POOL);
+    /* index: pool slots, all present, none free */
+    w32(index, (uint32_t)pool);
     for (i = 1; i <= nob; i++) {
         w32(index + 4 + 8 * i, (uint32_t)(offsets[i] & 0xffffffffu));
         w32(index + 8 + 8 * i, (uint32_t)(lens[i] & 0xffffffffu));

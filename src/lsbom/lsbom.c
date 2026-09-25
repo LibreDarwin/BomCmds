@@ -245,6 +245,17 @@ static int load_tree(const bom_file *bf, prow **out, size_t *nout,
     if (tree == NULL || tree_len < 12)
         return 0;
     pb = bom_block(bf, r32(tree + 8), &pb_len);
+    /* Descend interior nodes (is_pi==0) to the leftmost leaf: each interior
+     * block lists (child_block, key_block) pairs; the first child leads to
+     * the first leaf of the subtree. */
+    while (pb != NULL && pb_len >= 12) {
+        int is_pi = r16(pb);
+        if (is_pi == 1)
+            break;
+        if (r16(pb + 2) == 0)
+            break; /* degenerate empty tree */
+        pb = bom_block(bf, r32(pb + 12), &pb_len);
+    }
     while (pb != NULL) {
         uint32_t next, count, i;
         int is_pi;

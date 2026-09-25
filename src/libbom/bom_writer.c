@@ -15,6 +15,9 @@
 #define BM_FIXED_START 0x200
 #define BM_TREE_PAD 0x1000
 #define BM_TRAILER_PAD 64
+/* Max Paths leaf capacity: 12-byte header + 8 bytes per entry fits 0x1000.
+ * Mirrors Apple's observed leaf sizes (max ~500 rows per leaf). */
+#define BM_LEAF_CAP 266
 
 /* ---- endian helpers ---- */
 
@@ -450,6 +453,25 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
     for (i = 0; i < (ngroups ? ngroups : 1); i++)
         t_tree[i] = t_paths[i] = t_prptr[i] = t_treeptr[i] = -1;
 
+    /* Pre-pass: count non-special paths (rows in the Paths tree) and whether
+     * any file records exist (drives the BomInfo entry count below). */
+    size_t ncount = 0;
+    int has_file = 0;
+    for (i = 0; i < npaths; i++) {
+        const bm_path *n = &w->paths[i];
+        if (n->type == BM_TYPE_SPC)
+            continue;
+        ncount++;
+        if (n->type != BM_TYPE_DIR)
+            has_file = 1;
+    }
+    /* Paths tree leaf capacity: 12-byte header + 8 bytes per entry must fit a
+     * 0x1000 block, so one leaf holds at most BM_LEAF_CAP rows.  Larger trees
+     * use the chained leaf + interior layout (see FORMAT.md 4.4). */
+    int nleaves = 1;
+    if (ncount > BM_LEAF_CAP)
+        nleaves = (int)((ncount + BM_LEAF_CAP - 1) / BM_LEAF_CAP);
+
     int idx = 11;
     for (i = 0; i < npaths; i++) {
         const bm_path *n = &w->paths[i];
@@ -491,7 +513,12 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
             idx += 2;
         }
     }
-    int nob = idx - 1;
+    int base_nob = idx - 1;
+    /* Chained Paths trees reserve nleaves extra blocks after the content
+     * area: leaves 1..nleaves-1 plus one interior node.  put() requires
+     * idx <= bs->nob, so the pool must cover them up front. */
+    int extra_blocks = (nleaves > 1) ? nleaves : 0;
+    int nob = base_nob + extra_blocks;
 
     blob_store bs;
     if (blobs_init(&bs, nob) != 0) {
@@ -650,16 +677,6 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
      *   - entries are emitted in readdir (pre-order path scan) order of
      *     first occurrence, and each inode is only counted once.
      */
-    size_t ncount = 0; /* non-special count */
-    int has_file = 0;
-    for (i = 0; i < npaths; i++) {
-        const bm_path *n = &w->paths[i];
-        if (n->type == BM_TYPE_SPC)
-            continue;
-        ncount++;
-        if (n->type != BM_TYPE_DIR)
-            has_file = 1;
-    }
     uint64_t plain = 0;
     uint32_t arcp[BM_MAXSLICE] = {0};
     uint64_t arsz[BM_MAXSLICE] = {0};
@@ -785,13 +802,67 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
     }
     qsort(mains, ncount, sizeof(main_entry), cmp_main);
 
-    uint8_t b3[BM_TREE_PAD];
-    memset(b3, 0, sizeof(b3));
-    w16(b3, 1);
-    w16(b3 + 2, (uint16_t)ncount);
-    for (i = 0; i < ncount; i++) {
-        w32(b3 + 12 + 8 * i, mains[i].pii);
-        w32(b3 + 16 + 8 * i, mains[i].file);
+    /* blocks 2,3(+): Paths tree header + paths sorted by (parent,name).
+     * nleaves == 1 keeps the historical single-leaf layout (bpi = block 3);
+     * nleaves > 1 emits a chained leaf list plus one interior node (bpi
+     * points at the interior; the last leaf is reached only via the chain). */
+    uint32_t bpi = 3;
+    for (int lk = 0; lk < nleaves; lk++) {
+        size_t start = (size_t)lk * BM_LEAF_CAP;
+        size_t count = ((size_t)ncount - start < BM_LEAF_CAP)
+                           ? (size_t)ncount - start
+                           : BM_LEAF_CAP;
+        uint32_t blk = (lk == 0) ? 3 : (uint32_t)(base_nob + lk);
+        uint32_t nxt = (lk + 1 >= nleaves)
+                           ? 0
+                           : (uint32_t)((lk + 1 == 0) ? 3 : base_nob + lk + 1);
+        uint32_t prv = (lk == 0)
+                           ? 0
+                           : (uint32_t)((lk - 1 == 0) ? 3 : base_nob + lk - 1);
+        uint8_t leaf[BM_TREE_PAD];
+        memset(leaf, 0, sizeof(leaf));
+        w16(leaf, 1); /* is_pi: leaf */
+        w16(leaf + 2, (uint16_t)count);
+        w32(leaf + 4, nxt);
+        w32(leaf + 8, prv);
+        for (i = 0; i < count; i++) {
+            w32(leaf + 12 + 8 * i, mains[start + i].pii);
+            w32(leaf + 16 + 8 * i, mains[start + i].file);
+        }
+        if (put(&bs, blk, leaf, sizeof(leaf)) != 0) {
+            free(mains);
+            goto write_err;
+        }
+    }
+    if (nleaves > 1) {
+        /* interior node: is_pi=0, count = nleaves-1, entries are
+         * (leaf_block, max_file) with max_file = file block of the subtree's
+         * greatest (parent,name) key (the last row of each leaf). */
+        uint8_t node[BM_TREE_PAD];
+        memset(node, 0, sizeof(node));
+        w16(node, 0);
+        w16(node + 2, (uint16_t)(nleaves - 1));
+        w32(node + 4, 0);
+        w32(node + 8, 0);
+        for (int lk = 0; lk < nleaves - 1; lk++) {
+            size_t end = (size_t)(lk + 1) * BM_LEAF_CAP;
+            if (end > (size_t)ncount)
+                end = (size_t)ncount;
+            uint32_t blk = (lk == 0) ? 3 : (uint32_t)(base_nob + lk);
+            w32(node + 12 + 8 * lk, blk);
+            w32(node + 16 + 8 * lk, mains[end - 1].file);
+        }
+        {
+            uint32_t lastblk =
+                (nleaves - 1 == 0) ? 3 : (uint32_t)(base_nob + nleaves - 1);
+            w32(node + 12 + 8 * (nleaves - 1), lastblk);
+        }
+        if (put(&bs, (uint32_t)(base_nob + nleaves), node, sizeof(node)) !=
+            0) {
+            free(mains);
+            goto write_err;
+        }
+        bpi = (uint32_t)(base_nob + nleaves);
     }
     free(mains);
 
@@ -800,12 +871,11 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
         memset(b2, 0, sizeof(b2));
         memcpy(b2, "tree", 4);
         w32(b2 + 4, 1);
-        w32(b2 + 8, 3);
+        w32(b2 + 8, bpi);
         w32(b2 + 12, BM_TREE_PAD);
         w32(b2 + 16, (uint32_t)ncount);
         put(&bs, 2, b2, sizeof(b2));
     }
-    put(&bs, 3, b3, BM_TREE_PAD);
 
     /* blocks 4,5: HLIndex tree header + HLPaths sorted by first member pid */
     gp_order *gps = (gp_order *)malloc((ngroups ? ngroups : 1) * sizeof(*gps));
@@ -904,14 +974,20 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
     }
     uint64_t idxoff = off;
 
-    size_t indexlen = 4 + (size_t)BM_POOL * 8 + 4;
+    /* The block-index pool must cover slots 1..nob (reader walks the pool
+     * by the number_of_blocks count); grow it when content overflows the
+     * default pool, mirroring Apple's scaling of the free-list size. */
+    size_t pool = BM_POOL;
+    while (pool < (size_t)nob + 1)
+        pool *= 2;
+    size_t indexlen = 4 + pool * 8 + 4;
     index = (uint8_t *)calloc(indexlen, 1);
     if (index == NULL) {
         free(offsets);
         free(lens);
         goto write_err;
     }
-    w32(index, (uint32_t)BM_POOL);
+    w32(index, (uint32_t)pool);
     /* slot 0: (0,0) */
     for (i = 1; i <= (size_t)nob; i++) {
         w32(index + 4 + 8 * i, (uint32_t)(offsets[i] & 0xffffffffu));

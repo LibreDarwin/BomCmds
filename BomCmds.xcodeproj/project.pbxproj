@@ -25,6 +25,13 @@
 		1A2B3C7D00000000000000A3 /* bom_writer.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D0000000000000016 /* bom_writer.c */; };
 		1A2B3C7D00000000000000A4 /* bom_read.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C5D0000000000000052 /* bom_read.c */; };
 		1A2B3C7D00000000000000A5 /* version.plist in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000B2 /* version.plist */; };
+		1A2B3C7D00000000000000D1 /* BOMStorage.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000C1 /* BOMStorage.c */; };
+		1A2B3C7D00000000000000D2 /* BOMTree.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000C2 /* BOMTree.c */; };
+		1A2B3C7D00000000000000D3 /* BOMFSObject.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000C3 /* BOMFSObject.c */; };
+		1A2B3C7D00000000000000D4 /* BOMBom.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000C4 /* BOMBom.c */; };
+		1A2B3C7D00000000000000D5 /* BOMCopier.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000C5 /* BOMCopier.c */; };
+		1A2B3C7D00000000000000D6 /* bom_reencode.c in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000C6 /* bom_reencode.c */; };
+		1A2B3C7D00000000000000D7 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000CB /* CoreFoundation.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -57,6 +64,16 @@
 		1A2B3C7D00000000000000B3 /* CodeResources */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = CodeResources; sourceTree = "<group>"; };
 		1A2B3C7D00000000000000B4 /* Bom.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Bom.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A2B3C7D00000000000000BD /* Bom.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1A2B3C7D00000000000000B4 /* Bom.framework */; };
+		1A2B3C7D00000000000000C1 /* BOMStorage.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = BOMStorage.c; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000C2 /* BOMTree.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = BOMTree.c; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000C3 /* BOMFSObject.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = BOMFSObject.c; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000C4 /* BOMBom.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = BOMBom.c; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000C5 /* BOMCopier.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = BOMCopier.c; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000C6 /* bom_reencode.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = bom_reencode.c; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000C7 /* BOM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BOM.h; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000C8 /* bom_api.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bom_api.h; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000C9 /* bom_reencode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bom_reencode.h; sourceTree = "<group>"; };
+		1A2B3C7D00000000000000CB /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +81,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A2B3C7D00000000000000D7 /* CoreFoundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -138,6 +156,15 @@
 				1A2B3C4D0000000000000017 /* bom_writer.h */,
 				1A2B3C5D0000000000000052 /* bom_read.c */,
 				1A2B3C5D0000000000000053 /* bom_read.h */,
+				1A2B3C7D00000000000000C1 /* BOMStorage.c */,
+				1A2B3C7D00000000000000C2 /* BOMTree.c */,
+				1A2B3C7D00000000000000C3 /* BOMFSObject.c */,
+				1A2B3C7D00000000000000C4 /* BOMBom.c */,
+				1A2B3C7D00000000000000C5 /* BOMCopier.c */,
+				1A2B3C7D00000000000000C6 /* bom_reencode.c */,
+				1A2B3C7D00000000000000C9 /* bom_reencode.h */,
+				1A2B3C7D00000000000000C7 /* BOM.h */,
+				1A2B3C7D00000000000000C8 /* bom_api.h */,
 				1A2B3C7D00000000000000B1 /* Info.plist */,
 				1A2B3C7D00000000000000B2 /* version.plist */,
 				1A2B3C7D00000000000000B3 /* CodeResources */,
@@ -330,6 +357,12 @@
 				1A2B3C7D00000000000000A2 /* fs_walk.c in Sources */,
 				1A2B3C7D00000000000000A3 /* bom_writer.c in Sources */,
 				1A2B3C7D00000000000000A4 /* bom_read.c in Sources */,
+				1A2B3C7D00000000000000D1 /* BOMStorage.c in Sources */,
+				1A2B3C7D00000000000000D2 /* BOMTree.c in Sources */,
+				1A2B3C7D00000000000000D3 /* BOMFSObject.c in Sources */,
+				1A2B3C7D00000000000000D4 /* BOMBom.c in Sources */,
+				1A2B3C7D00000000000000D5 /* BOMCopier.c in Sources */,
+				1A2B3C7D00000000000000D6 /* bom_reencode.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -369,6 +402,10 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				EXECUTABLE_PREFIX = "";
 				GCC_C_LANGUAGE_STANDARD = c11;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(CONFIGURATION_BUILD_DIR)",
+					"/System/Library/PrivateFrameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_CFLAGS = (
 					"-D_DARWIN_C_SOURCE",
@@ -385,6 +422,10 @@
 				EXECUTABLE_PREFIX = "";
 				GCC_C_LANGUAGE_STANDARD = c11;
 				GCC_OPTIMIZATION_LEVEL = 3;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(CONFIGURATION_BUILD_DIR)",
+					"/System/Library/PrivateFrameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_CFLAGS = (
 					"-D_DARWIN_C_SOURCE",
@@ -428,6 +469,10 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				EXECUTABLE_PREFIX = "";
 				GCC_C_LANGUAGE_STANDARD = c11;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(CONFIGURATION_BUILD_DIR)",
+					"/System/Library/PrivateFrameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_CFLAGS = (
 					"-D_DARWIN_C_SOURCE",
@@ -444,6 +489,10 @@
 				EXECUTABLE_PREFIX = "";
 				GCC_C_LANGUAGE_STANDARD = c11;
 				GCC_OPTIMIZATION_LEVEL = 3;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(CONFIGURATION_BUILD_DIR)",
+					"/System/Library/PrivateFrameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_CFLAGS = (
 					"-D_DARWIN_C_SOURCE",
@@ -464,6 +513,10 @@
 					"$(SRCROOT)/src",
 					"$(SRCROOT)/src/ditto",
 					"$(SRCROOT)/src/libbom",
+				);
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(CONFIGURATION_BUILD_DIR)",
+					"/System/Library/PrivateFrameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_CFLAGS = (
@@ -490,6 +543,10 @@
 					"$(SRCROOT)/src/ditto",
 					"$(SRCROOT)/src/libbom",
 				);
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(CONFIGURATION_BUILD_DIR)",
+					"/System/Library/PrivateFrameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_CFLAGS = (
 					"-D_DARWIN_C_SOURCE",
@@ -515,6 +572,7 @@
 				GCC_C_LANGUAGE_STANDARD = c11;
 				INFOPLIST_FILE = src/libbom/Info.plist;
 				INSTALL_PATH = /System/Library/PrivateFrameworks;
+				LD_DYLIB_INSTALL_NAME = "@rpath/Bom.framework/Versions/A/Bom";
 				MACH_O_TYPE = mh_dylib;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_CFLAGS = (
@@ -539,6 +597,7 @@
 				GCC_OPTIMIZATION_LEVEL = 3;
 				INFOPLIST_FILE = src/libbom/Info.plist;
 				INSTALL_PATH = /System/Library/PrivateFrameworks;
+				LD_DYLIB_INSTALL_NAME = "@rpath/Bom.framework/Versions/A/Bom";
 				MACH_O_TYPE = mh_dylib;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				OTHER_CFLAGS = (

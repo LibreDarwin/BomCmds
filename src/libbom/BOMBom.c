@@ -375,9 +375,6 @@ static BOMBom *bom_rebuild_with_options(const char *outPath, BOMBom *bom,
             maxpid = r->pid;
         nslice_total += r->pr.nslice;
     }
-    if (t->nrows > 500) { /* single Paths block: 12 + 8*n <= 0x1000 */
-        return NULL;
-    }
     dropped = (uint8_t *)calloc((size_t)maxpid + 1, 1);
     rawpr = (uint8_t **)calloc(t->nrows ? t->nrows : 1, sizeof(uint8_t *));
     rawprlen = (size_t *)calloc(t->nrows ? t->nrows : 1, sizeof(size_t));

@@ -173,8 +173,21 @@ BOMTree *BOMTreeOpenWithName(BOMStorage *storage, const char *name,
         nalloc = t->count;
     }
 
-    /* Walk the Paths chain via next_paths_block_index. */
+    /* Descend to the leftmost leaf: interior nodes (is_pi=0) carry a list of
+     * (child_block, key_block) entries; the first child leads to the first
+     * leaf of the tree.  Leaves form a singly-linked chain via `next`, so
+     * walking forward from the leftmost leaf visits every row in key order. */
     pb = bom_block(&storage->bf, t->bpi, &pb_len);
+    while (pb != NULL && pb_len >= 12) {
+        uint32_t is_pi, count;
+        is_pi = r16be(pb);
+        count = r16be(pb + 2);
+        if (is_pi == 1)
+            break;
+        if (count == 0)
+            break; /* degenerate empty tree */
+        pb = bom_block(&storage->bf, _bom_r32(pb + 12), &pb_len);
+    }
     while (pb != NULL && pb_len >= 12) {
         uint32_t is_pi, count, next, i;
         is_pi = r16be(pb);
