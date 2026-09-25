@@ -167,6 +167,53 @@ static int build_pr(const bm_walk *w, uint32_t pid, uint8_t **out,
     uint32_t ck = 0, lnklen = 0;
     uint8_t *tail = NULL;
     size_t taillen = 0;
+    uint16_t arch = 0x000f;
+
+    if (w->mode == BM_MODE_PATHONLY) {
+        /* 4-byte typed record: [type][0x01][00 00]; no contents, no link. */
+        uint8_t rec[4];
+        rec[0] = (n->type == BM_TYPE_DIR)      ? 2
+                 : (n->type == BM_TYPE_LNK)    ? 3
+                                                     : 1;
+        rec[1] = 1;
+        rec[2] = 0;
+        rec[3] = 0;
+        *out = (uint8_t *)malloc(4);
+        if (*out == NULL)
+            return -1;
+        memcpy(*out, rec, 4);
+        *outlen = 4;
+        return 0;
+    }
+
+    if (w->mode == BM_MODE_FILELIST) {
+        /* Records from an lsbom(8) listing: arch 3, mtime 0, values carried
+         * in n->st / n->cksum / n->link. No filesystem access. */
+        arch = 0x0003;
+        if (n->type == BM_TYPE_REG) {
+            type = 1;
+            ck = n->cksum;
+            tail = calloc(4, 1); /* 4 padding zero bytes: record is 35 bytes */
+            if (tail == NULL)
+                return -1;
+            taillen = 4;
+        } else if (n->type == BM_TYPE_LNK) {
+            type = 3;
+            size_t l = n->link ? strlen(n->link) : 0;
+            ck = n->cksum;
+            lnklen = (uint32_t)l + 1;
+            size_t tailn = l + 1 + 8;
+            tail = (uint8_t *)calloc(tailn, 1);
+            if (tail == NULL)
+                return -1;
+            memcpy(tail, n->link ? n->link : "", l);
+            tail[l] = '\0';
+            taillen = tailn;
+        } else {
+            type = 2; /* directory */
+        }
+        goto emit_base;
+    }
 
     if (n->type == BM_TYPE_REG) {
         type = 1;
@@ -287,10 +334,11 @@ static int build_pr(const bm_walk *w, uint32_t pid, uint8_t **out,
         type = 2;
     }
 
+emit_base:
     uint8_t base[31];
     base[0] = type;
     base[1] = 1;
-    w16(base + 2, 0x000f);
+    w16(base + 2, arch);
     w16(base + 4, (uint16_t)(n->st.st_mode & 0xffff));
     w32(base + 6, (uint32_t)n->st.st_uid);
     w32(base + 10, (uint32_t)n->st.st_gid);
@@ -613,70 +661,86 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
             has_file = 1;
     }
     uint64_t plain = 0;
-    uint32_t arcp[BM_MAXSLICE];
-    uint64_t arsz[BM_MAXSLICE];
+    uint32_t arcp[BM_MAXSLICE] = {0};
+    uint64_t arsz[BM_MAXSLICE] = {0};
     size_t narch = 0;
-    uint64_t *keys = (uint64_t *)malloc((ncount ? ncount : 1) *
-                                        sizeof(uint64_t));
-    size_t nk = 0;
-    if (keys == NULL)
-        goto write_err;
-    for (i = 0; i < npaths; i++) {
-        const bm_path *n = &w->paths[i];
-        if (n->type == BM_TYPE_SPC || n->type == BM_TYPE_DIR)
-            continue;
-        uint64_t k = ((uint64_t)(uint32_t)n->st.st_dev << 32) ^
-                     (uint64_t)n->st.st_ino;
-        size_t j;
-        int seen = 0;
-        for (j = 0; j < nk; j++)
-            if (keys[j] == k) {
-                seen = 1;
-                break;
-            }
-        if (seen)
-            continue;
-        keys[nk++] = k;
-
-        FILE *f = fopen(n->path, "rb");
-        if (f == NULL) {
-            plain += (uint64_t)n->st.st_size;
-            continue;
-        }
-        uint8_t hdr[4096];
-        size_t hl = fread(hdr, 1, sizeof(hdr), f);
-        fclose(f);
-        struct bm_mslice sl[BM_MAXSLICE];
-        int is_fat = 0;
-        int nsl = macho_slices(hdr, hl, (uint64_t)n->st.st_size, sl,
-                               BM_MAXSLICE, &is_fat);
-        if (nsl <= 0) {
-            plain += (uint64_t)n->st.st_size;
-            continue;
-        }
-        for (j = 0; j < (size_t)nsl; j++) {
-            uint32_t cp = sl[j].cputype;
-            size_t a;
-            int found = 0;
-            for (a = 0; a < narch; a++)
-                if (arcp[a] == cp) {
-                    found = 1;
+    if (w->mode == BM_MODE_DIR) {
+        uint64_t *keys = (uint64_t *)malloc((ncount ? ncount : 1) *
+                                            sizeof(uint64_t));
+        size_t nk = 0;
+        if (keys == NULL)
+            goto write_err;
+        for (i = 0; i < npaths; i++) {
+            const bm_path *n = &w->paths[i];
+            if (n->type == BM_TYPE_SPC || n->type == BM_TYPE_DIR)
+                continue;
+            uint64_t k = ((uint64_t)(uint32_t)n->st.st_dev << 32) ^
+                         (uint64_t)n->st.st_ino;
+            size_t j;
+            int seen = 0;
+            for (j = 0; j < nk; j++)
+                if (keys[j] == k) {
+                    seen = 1;
                     break;
                 }
-            if (!found) {
-                if (narch >= BM_MAXSLICE)
-                    break;
-                arcp[narch] = cp;
-                arsz[narch] = 0;
-                a = narch;
-                narch++;
+            if (seen)
+                continue;
+            keys[nk++] = k;
+
+            FILE *f = fopen(n->path, "rb");
+            if (f == NULL) {
+                plain += (uint64_t)n->st.st_size;
+                continue;
             }
-            arsz[a] += (uint64_t)sl[j].len;
+            uint8_t hdr[4096];
+            size_t hl = fread(hdr, 1, sizeof(hdr), f);
+            fclose(f);
+            struct bm_mslice sl[BM_MAXSLICE];
+            int is_fat = 0;
+            int nsl = macho_slices(hdr, hl, (uint64_t)n->st.st_size, sl,
+                                   BM_MAXSLICE, &is_fat);
+            if (nsl <= 0) {
+                plain += (uint64_t)n->st.st_size;
+                continue;
+            }
+            for (j = 0; j < (size_t)nsl; j++) {
+                uint32_t cp = sl[j].cputype;
+                size_t a;
+                int found = 0;
+                for (a = 0; a < narch; a++)
+                    if (arcp[a] == cp) {
+                        found = 1;
+                        break;
+                    }
+                if (!found) {
+                    if (narch >= BM_MAXSLICE)
+                        break;
+                    arcp[narch] = cp;
+                    arsz[narch] = 0;
+                    a = narch;
+                    narch++;
+                }
+                arsz[a] += (uint64_t)sl[j].len;
+            }
+        }
+        free(keys);
+    } else if (w->mode == BM_MODE_FILELIST) {
+        /* No inode dedup possible from a listing: sizes are summed over
+         * every non-directory entry (regular files *and* symlinks). */
+        for (i = 0; i < npaths; i++) {
+            const bm_path *n = &w->paths[i];
+            if (n->type == BM_TYPE_SPC || n->type == BM_TYPE_DIR)
+                continue;
+            plain += (uint64_t)n->st.st_size;
         }
     }
-    free(keys);
+    /* BM_MODE_PATHONLY: plain stays 0, no arch table. */
 
-    int ninfo = has_file ? (int)(1 + narch) : 0;
+    int ninfo;
+    if (w->mode == BM_MODE_FILELIST)
+        ninfo = (npaths > 0) ? 1 : 0;
+    else
+        ninfo = has_file ? (int)(1 + narch) : 0;
     uint8_t b1head[12];
     w32(b1head, 1);
     w32(b1head + 4, (uint32_t)(npaths + 1));

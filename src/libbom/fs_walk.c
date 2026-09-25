@@ -71,6 +71,8 @@ static void scan_dir(const char *path, uint32_t parent_pid,
         node->type = classify(st.st_mode);
         node->group = -1;
         node->rank = 0;
+        node->cksum = 0;
+        node->link = NULL;
         (*n)++;
         if (node->type == BM_TYPE_DIR)
             scan_dir(full, node->pid, paths, n, cap);
@@ -188,6 +190,7 @@ static void bm_walk_free_parts(bm_path *paths, size_t n, bm_group *groups,
     for (i = 0; i < n; i++) {
         free(paths[i].path);
         free(paths[i].name);
+        free(paths[i].link);
     }
     free(paths);
     for (i = 0; i < ng; i++)
@@ -229,6 +232,8 @@ int bm_scan(const char *root, bm_walk *out) {
     r->type = BM_TYPE_DIR;
     r->group = -1;
     r->rank = 0;
+    r->cksum = 0;
+    r->link = NULL;
     n = 1;
     scan_dir(root, 1, &paths, &n, &cap);
 
@@ -277,6 +282,7 @@ int bm_scan(const char *root, bm_walk *out) {
     out->npaths = n;
     out->groups = groups;
     out->ngroups = ng;
+    out->mode = BM_MODE_DIR;
     return 0;
 
 oom:

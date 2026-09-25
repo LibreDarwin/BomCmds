@@ -8,7 +8,12 @@
 .Nd create a bill of materials (BOM) for a directory tree
 .Sh SYNOPSIS
 .Nm
+.Op Fl s
 .Ar directory
+.Ar bomFile
+.Nm
+.Op Fl s
+.Fl i Ar fileList
 .Ar bomFile
 .Sh DESCRIPTION
 The
@@ -32,6 +37,21 @@ The BOM written by
 .Nm
 is byte-for-byte identical to the corresponding output of Apple's
 mkbom for ordinary directory trees.
+.Sh OPTIONS
+.Bl -tag -width Fl
+.It Fl i Ar fileList
+Read an
+.Xr lsbom 1
+listing from
+.Ar fileList
+instead of scanning a directory tree and write the resulting BOM to
+.Ar bomFile .
+.It Fl s
+Write only minimal path records, omitting checksums and per-file
+contents data.  Combined with
+.Fl i ,
+the on-disk layout is functional but not byte-identical to Apple's.
+.El
 .Sh EXIT STATUS
 .Ex -std
 .Sh SEE ALSO
@@ -41,10 +61,18 @@ mkbom for ordinary directory trees.
 This implementation is a clean-room rewrite of the classic
 .Nm
 utility.
-Simplified mode
+By default it walks a directory; simplified mode
 .Pq Fl s
-and file-list mode
+emits bare path records, and file-list mode
 .Pq Fl i
-are not implemented yet.
+builds a BOM from an
+.Xr lsbom 1
+listing.
+The
+.Fl s
+and
+.Fl i
+options can be combined; that combination does not reproduce
+Apple's exact on-disk layout but is otherwise functional.
 .Sh AUTHORS
 .An LibreDarwin

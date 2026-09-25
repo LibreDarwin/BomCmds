@@ -147,6 +147,20 @@ def blockmap(path):
     return nob, m
 
 
+def _compare(ref, out, label):
+    """Block-index + lsbom comparison. Returns (status, detail) or None on OK."""
+    rn, rm = blockmap(ref)
+    on, om = blockmap(out)
+    if rn != on:
+        return 'BLOCK-DIFF', '%s: nob %d != %d' % (label, rn, on)
+    diff = [i for i in range(1, rn + 1) if rm[i] != om[i]]
+    if diff:
+        return 'BLOCK-DIFF', '%s: blocks differ: %s' % (label, diff)
+    if lsbom(ref) != lsbom(out):
+        return 'LSBOM-DIFF', label
+    return None
+
+
 def run(fixture, trees, subject, ref_mkbom):
     scratch = os.path.join(HERE, '.test_tmp')
     os.makedirs(scratch, exist_ok=True)
@@ -160,20 +174,40 @@ def run(fixture, trees, subject, ref_mkbom):
         return 'REF-MKBOM-FAIL', ''
     if subprocess.run(subject + [d, out]).returncode != 0:
         return 'SUBJECT-FAIL', ''
-    rn, rm = blockmap(ref)
-    on, om = blockmap(out)
-    if rn != on:
-        return 'BLOCK-DIFF', 'nob %d != %d' % (rn, on)
-    diff = [i for i in range(1, rn + 1) if rm[i] != om[i]]
-    if diff:
-        return 'BLOCK-DIFF', 'blocks differ: %s' % diff
-    if lsbom(ref) != lsbom(out):
-        return 'LSBOM-DIFF', ''
+    bad = _compare(ref, out, 'dir')
+    if bad:
+        return bad
+    # -s: path-only bom
+    ref_s = os.path.join(scratch, fixture + '.ref.s.bom')
+    out_s = os.path.join(scratch, fixture + '.out.s.bom')
+    if subprocess.run([ref_mkbom, '-s', d, ref_s]).returncode != 0:
+        return 'REF-MKBOM-FAIL', '-s'
+    if subprocess.run(subject + ['-s', d, out_s]).returncode != 0:
+        return 'SUBJECT-FAIL', '-s'
+    bad = _compare(ref_s, out_s, '-s')
+    if bad:
+        return bad
+    # -i: rebuild from /usr/bin/lsbom output of the reference bom
+    rc, listing = lsbom(ref)
+    if rc != 0:
+        return 'REF-LSBOM-FAIL', ''
+    listpath = os.path.join(scratch, fixture + '.ls.txt')
+    with open(listpath, 'wb') as f:
+        f.write(listing.encode('utf-8'))
+    ref_i = os.path.join(scratch, fixture + '.ref.i.bom')
+    out_i = os.path.join(scratch, fixture + '.out.i.bom')
+    if subprocess.run([ref_mkbom, '-i', listpath, ref_i]).returncode != 0:
+        return 'REF-MKBOM-FAIL', '-i'
+    if subprocess.run(subject + ['-i', listpath, out_i]).returncode != 0:
+        return 'SUBJECT-FAIL', '-i'
+    bad = _compare(ref_i, out_i, '-i')
+    if bad:
+        return bad
     if _LSBOM_SUBJECT is not None:
         for bom in (ref, out):
-            bad = lsbom_battery(bom)
-            if bad:
-                st, detail = bad
+            badb = lsbom_battery(bom)
+            if badb:
+                st, detail = badb
                 return 'LSBOM-BATTERY-FAIL', detail + ' %s' % bom
     return 'OK', ''
 
