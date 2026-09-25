@@ -24,7 +24,7 @@ MK       := $(BUILD_DIR)/mkbom
 MK_OBJS  := $(OBJDIR)/mkbom_main.o
 LS       := $(BUILD_DIR)/lsbom
 LS_OBJS  := $(OBJDIR)/lsbom_main.o
-LIB_OBJS := $(OBJDIR)/bom_cksum.o $(OBJDIR)/fs_walk.o $(OBJDIR)/bom_writer.o $(OBJDIR)/bom_read.o
+LIB_OBJS := $(OBJDIR)/bom_cksum.o $(OBJDIR)/fs_walk.o $(OBJDIR)/bom_writer.o $(OBJDIR)/bom_read.o $(OBJDIR)/bom_btree.o
 LIB_FW_OBJS := $(OBJDIR)/BOMStorage.o $(OBJDIR)/BOMTree.o $(OBJDIR)/BOMFSObject.o $(OBJDIR)/BOMBom.o $(OBJDIR)/BOMCopier.o $(OBJDIR)/bom_reencode.o
 DI       := $(BUILD_DIR)/ditto
 DI_OBJS  := $(OBJDIR)/ditto_main.o $(OBJDIR)/adouble.o $(OBJDIR)/bomf.o $(OBJDIR)/cpio.o $(OBJDIR)/macho.o $(OBJDIR)/zip.o
@@ -104,9 +104,13 @@ $(OBJDIR)/fs_walk.o: src/libbom/fs_walk.c src/libbom/fs_walk.h
 	@mkdir -p $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ src/libbom/fs_walk.c
 
-$(OBJDIR)/bom_writer.o: src/libbom/bom_writer.c src/libbom/bom_writer.h src/libbom/bom_cksum.h src/libbom/fs_walk.h
+$(OBJDIR)/bom_writer.o: src/libbom/bom_writer.c src/libbom/bom_writer.h src/libbom/bom_cksum.h src/libbom/fs_walk.h src/libbom/bom_btree.h
 	@mkdir -p $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ src/libbom/bom_writer.c
+
+$(OBJDIR)/bom_btree.o: src/libbom/bom_btree.c src/libbom/bom_btree.h
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS) -c -o $@ src/libbom/bom_btree.c
 
 $(OBJDIR)/bom_read.o: src/libbom/bom_read.c src/libbom/bom_read.h
 	@mkdir -p $(OBJDIR)
@@ -132,7 +136,7 @@ $(OBJDIR)/BOMCopier.o: src/libbom/BOMCopier.c src/libbom/bom_api.h src/libbom/BO
 	@mkdir -p $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ src/libbom/BOMCopier.c
 
-$(OBJDIR)/bom_reencode.o: src/libbom/bom_reencode.c src/libbom/bom_reencode.h src/libbom/bom_read.h src/libbom/bom_api.h
+$(OBJDIR)/bom_reencode.o: src/libbom/bom_reencode.c src/libbom/bom_reencode.h src/libbom/bom_read.h src/libbom/bom_api.h src/libbom/bom_btree.h
 	@mkdir -p $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ src/libbom/bom_reencode.c
 

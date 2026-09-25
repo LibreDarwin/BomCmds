@@ -15,6 +15,7 @@
  * archives, and re- numbering would corrupt the (parent,name) key sort that
  * this tree's interior nodes assume. */
 #include "bom_reencode.h"
+#include "bom_btree.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -24,7 +25,6 @@
 #define BM_POOL 2730
 #define BM_FIXED_START 0x200
 #define BM_TREE_PAD 0x1000
-#define BM_LEAF_CAP 266
 
 /* ---- endian helpers ---- */
 
@@ -298,8 +298,16 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
     size_t i;
     uint32_t maxpid = 0;
     int *pridx = NULL, *fidx = NULL, *piidx = NULL;
+    int *prow = NULL;
+    btree_key *keys = NULL;
+    uint32_t *iord = NULL;
+    uint32_t *leafblk = NULL;
+    uint32_t interior_blk = 0;
+    btree_plan plan;
     int nob = 0, idx, rc = -1;
     bominfo bi;
+
+    memset(&plan, 0, sizeof(plan));
 
     if (errbuf && errbufsz)
         errbuf[0] = '\0';
@@ -323,29 +331,70 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
         pridx = (int *)malloc(((size_t)maxpid + 1) * sizeof(int));
         fidx = (int *)malloc(((size_t)maxpid + 1) * sizeof(int));
         piidx = (int *)malloc(((size_t)maxpid + 1) * sizeof(int));
-        if (pridx == NULL || fidx == NULL || piidx == NULL) {
+        prow = (int *)malloc(((size_t)maxpid + 1) * sizeof(int));
+        keys = (btree_key *)malloc(ncount * sizeof(btree_key));
+        iord = (uint32_t *)malloc(ncount * sizeof(uint32_t));
+        if (pridx == NULL || fidx == NULL || piidx == NULL || prow == NULL ||
+            keys == NULL || iord == NULL) {
             if (errbuf && errbufsz)
                 snprintf(errbuf, errbufsz, "out of memory");
             goto out_early;
         }
-        idx = 11;
+        for (i = 0; i <= (size_t)maxpid; i++)
+            pridx[i] = fidx[i] = piidx[i] = -1;
+        for (i = 0; i <= (size_t)maxpid; i++)
+            prow[i] = -1;
         for (i = 0; i < ncount; i++) {
-            uint32_t pid = rows[i].pid;
-            pridx[pid] = idx;
-            fidx[pid] = idx + 1;
-            piidx[pid] = idx + 2;
-            idx += 3;
+            prow[rows[i].pid] = (int)i;
+            keys[i].parent = rows[i].parent;
+            keys[i].name = rows[i].name;
+        }
+        /* insertion order = ascending original pid (rows arrive in
+         * (parent,name)-sorted key order but pid-encoding is sparse) */
+        {
+            size_t nins = 0;
+            for (i = 1; i <= (size_t)maxpid; i++)
+                if (prow[i] >= 0)
+                    iord[nins++] = (uint32_t)prow[i];
+        }
+        if (bom_btree_plan(keys, ncount, iord, &plan) != 0) {
+            if (errbuf && errbufsz)
+                snprintf(errbuf, errbufsz, "out of memory");
+            goto out_early;
+        }
+        leafblk = (uint32_t *)calloc(plan.nleaf ? plan.nleaf : 1,
+                                     sizeof(uint32_t));
+        if (leafblk == NULL) {
+            if (errbuf && errbufsz)
+                snprintf(errbuf, errbufsz, "out of memory");
+            goto out_early;
+        }
+        leafblk[0] = 3;
+        /* block-index simulation in pid order: one triplet per row from
+         * block 11; each split allocates its new leaf (and, once, the
+         * interior node) immediately after the insert's own triplet. */
+        idx = 11;
+        {
+            size_t sp = 0, ins = 0;
+            for (i = 1; i <= (size_t)maxpid; i++) {
+                if (prow[i] < 0)
+                    continue;
+                pridx[i] = idx;
+                fidx[i] = idx + 1;
+                piidx[i] = idx + 2;
+                idx += 3;
+                if (sp < plan.nsplits &&
+                    plan.splits[sp].insert == (uint32_t)ins) {
+                    leafblk[plan.splits[sp].newleaf] = (uint32_t)idx;
+                    idx++;
+                    if (interior_blk == 0)
+                        interior_blk = (uint32_t)(idx++);
+                    sp++;
+                }
+                ins++;
+            }
         }
         nob = idx - 1;
-        {
-            /* Chained Paths trees reserve extra blocks after the content
-             * area: leaves 1..nleaves-1 plus one interior node. */
-            size_t nleaves = 1;
-            if (ncount > BM_LEAF_CAP)
-                nleaves = (ncount + BM_LEAF_CAP - 1) / BM_LEAF_CAP;
-            if (nleaves > 1)
-                nob += (int)nleaves;
-        }
         if (blobs_init(&bs, nob) != 0) {
             if (errbuf && errbufsz)
                 snprintf(errbuf, errbufsz, "out of memory");
@@ -420,49 +469,49 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
 
         /* blocks 2,3(+): Paths tree header + paths in the decoded order,
          * which is parent-before-child (the writer's (parent,name)-sorted
-         * storage order).  nleaves == 1 keeps the historical single-leaf
-         * layout (bpi = block 3); nleaves > 1 emits a chained leaf list plus
-         * one interior node whose trailing word is the final leaf block. */
+         * storage order).  Leaves are laid out by the split-aware planner
+         * (bom_btree.h) in the rows' (parent,name) keys inserted in pid
+         * order, emitted in chain order with fwd/back links; one interior
+         * node carries each leaf's block id and greatest file block. */
         {
-            size_t base_nob = (size_t)idx - 1;
-            size_t nleaves = 1;
-            if (ncount > BM_LEAF_CAP)
-                nleaves = (ncount + BM_LEAF_CAP - 1) / BM_LEAF_CAP;
             uint32_t bpi = 3;
-            for (size_t lk = 0; lk < nleaves; lk++) {
-                size_t start = lk * BM_LEAF_CAP;
-                size_t count = (ncount - start < BM_LEAF_CAP)
-                                   ? ncount - start
-                                   : BM_LEAF_CAP;
-                uint32_t blk = (lk == 0) ? 3 : (uint32_t)(base_nob + lk);
-                uint32_t nxt = (lk + 1 >= nleaves)
-                                   ? 0
-                                   : (uint32_t)((lk + 1 == 0) ? 3 : base_nob + lk + 1);
-                uint32_t prv = (lk == 0)
-                                   ? 0
-                                   : (uint32_t)((lk - 1 == 0) ? 3 : base_nob + lk - 1);
+            uint32_t ci;
+            if (plan.nleaf > 1)
+                bpi = interior_blk;
+            for (ci = 0; ci < plan.nleaf; ci++) {
+                uint32_t cid = plan.chain[ci];
+                uint32_t start = (uint32_t)plan.leaf[cid].start;
+                uint32_t cnt = (uint32_t)plan.leaf[cid].count;
+                uint32_t nxt = (ci + 1 < plan.nleaf)
+                                   ? leafblk[plan.chain[ci + 1]]
+                                   : 0;
+                uint32_t prv = (ci > 0)
+                                   ? leafblk[plan.chain[ci - 1]]
+                                   : 0;
                 uint8_t *leaf = (uint8_t *)calloc(BM_TREE_PAD, 1);
+                uint32_t r;
                 if (leaf == NULL) {
                     if (errbuf && errbufsz)
                         snprintf(errbuf, errbufsz, "out of memory");
                     goto out;
                 }
                 w16(leaf, 1); /* is_pi: leaf */
-                w16(leaf + 2, (uint16_t)count);
+                w16(leaf + 2, (uint16_t)cnt);
                 w32(leaf + 4, nxt);
                 w32(leaf + 8, prv);
-                for (i = 0; i < count; i++) {
-                    uint32_t pid = rows[start + i].pid;
-                    w32(leaf + 12 + 8 * i, (uint32_t)piidx[pid]);
-                    w32(leaf + 16 + 8 * i, (uint32_t)fidx[pid]);
+                for (r = 0; r < cnt; r++) {
+                    uint32_t rw = plan.sorted[start + r];
+                    uint32_t pid = rows[rw].pid;
+                    w32(leaf + 12 + 8 * r, (uint32_t)piidx[pid]);
+                    w32(leaf + 16 + 8 * r, (uint32_t)fidx[pid]);
                 }
-                if (put(&bs, blk, leaf, BM_TREE_PAD) != 0) {
+                if (put(&bs, (int)leafblk[cid], leaf, BM_TREE_PAD) != 0) {
                     free(leaf);
                     goto out;
                 }
                 free(leaf);
             }
-            if (nleaves > 1) {
+            if (plan.nleaf > 1) {
                 uint8_t *node = (uint8_t *)calloc(BM_TREE_PAD, 1);
                 if (node == NULL) {
                     if (errbuf && errbufsz)
@@ -470,27 +519,25 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
                     goto out;
                 }
                 w16(node, 0);
-                w16(node + 2, (uint16_t)(nleaves - 1));
+                w16(node + 2, (uint16_t)(plan.nleaf - 1));
                 w32(node + 4, 0);
                 w32(node + 8, 0);
-                for (size_t lk = 0; lk < nleaves - 1; lk++) {
-                    size_t end = (size_t)(lk + 1) * BM_LEAF_CAP;
-                    if (end > ncount)
-                        end = ncount;
-                    uint32_t blk = (lk == 0) ? 3 : (uint32_t)(base_nob + lk);
-                    uint32_t pid = rows[end - 1].pid; /* last row of leaf lk */
-                    w32(node + 12 + 8 * lk, blk);
-                    w32(node + 16 + 8 * lk, (uint32_t)fidx[pid]);
+                for (ci = 0; ci + 1 < plan.nleaf; ci++) {
+                    uint32_t cid = plan.chain[ci];
+                    uint32_t lastidx =
+                        plan.sorted[plan.leaf[cid].start +
+                                    plan.leaf[cid].count - 1];
+                    w32(node + 12 + 8 * ci, leafblk[cid]);
+                    w32(node + 16 + 8 * ci,
+                        (uint32_t)fidx[rows[lastidx].pid]);
                 }
-                w32(node + 12 + 8 * (nleaves - 1),
-                    (uint32_t)(base_nob + nleaves - 1));
-                if (put(&bs, (uint32_t)(base_nob + nleaves), node,
-                        BM_TREE_PAD) != 0) {
+                w32(node + 12 + 8 * (plan.nleaf - 1),
+                    leafblk[plan.chain[plan.nleaf - 1]]);
+                if (put(&bs, (int)interior_blk, node, BM_TREE_PAD) != 0) {
                     free(node);
                     goto out;
                 }
                 free(node);
-                bpi = (uint32_t)(base_nob + nleaves);
             }
 
             uint8_t b2[21];
@@ -596,7 +643,12 @@ int bom_reencode(const bom_reenc_row *rows, size_t nrows,
 
 out:
     blobs_free(&bs);
+    bom_btree_plan_free(&plan);
+    free(leafblk);
 out_early:
+    free(prow);
+    free(keys);
+    free(iord);
     free(pridx);
     free(fidx);
     free(piidx);

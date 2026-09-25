@@ -10,14 +10,12 @@
 #include <unistd.h>
 
 #include "bom_cksum.h"
+#include "bom_btree.h"
 
 #define BM_POOL 2730
 #define BM_FIXED_START 0x200
 #define BM_TREE_PAD 0x1000
 #define BM_TRAILER_PAD 64
-/* Max Paths leaf capacity: 12-byte header + 8 bytes per entry fits 0x1000.
- * Mirrors Apple's observed leaf sizes (max ~500 rows per leaf). */
-#define BM_LEAF_CAP 266
 
 /* ---- endian helpers ---- */
 
@@ -366,21 +364,6 @@ emit_base:
 
 /* ---- sort helpers ---- */
 
-typedef struct main_entry {
-    uint32_t pii;
-    uint32_t file;
-    uint32_t parent;
-    const char *name;
-} main_entry;
-
-static int cmp_main(const void *a, const void *b) {
-    const main_entry *x = (const main_entry *)a;
-    const main_entry *y = (const main_entry *)b;
-    if (x->parent != y->parent)
-        return x->parent < y->parent ? -1 : 1;
-    return strcmp(x->name, y->name);
-}
-
 typedef struct tr_entry {
     uint32_t empty;
     uint32_t str;
@@ -465,14 +448,66 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
         if (n->type != BM_TYPE_DIR)
             has_file = 1;
     }
-    /* Paths tree leaf capacity: 12-byte header + 8 bytes per entry must fit a
-     * 0x1000 block, so one leaf holds at most BM_LEAF_CAP rows.  Larger trees
-     * use the chained leaf + interior layout (see FORMAT.md 4.4). */
-    int nleaves = 1;
-    if (ncount > BM_LEAF_CAP)
-        nleaves = (int)((ncount + BM_LEAF_CAP - 1) / BM_LEAF_CAP);
+    /* Paths tree layout: the (parent,name) rows are partitioned into leaves
+     * of capacity BM_BTREE_LEAF_CAP by the planner (bom_btree.h), which
+     * reproduces Apple's split-at-510 model: insert rows in pid order, split
+     * an overflowing leaf at (count+1)/2, link the new leaf into the chain
+     * right after the split one, and (when the tree spans several leaves)
+     * route everything through one interior node (see FORMAT.md 4.4). */
+    btree_key *keys = NULL;
+    uint32_t *pidarr = NULL;
+    btree_plan plan;
+    uint32_t *leafblk = NULL;
+    uint32_t interior_blk = 0;
+    memset(&plan, 0, sizeof(plan));
+    if (ncount > 0) {
+        keys = (btree_key *)malloc(ncount * sizeof(btree_key));
+        pidarr = (uint32_t *)malloc(ncount * sizeof(uint32_t));
+        if (keys == NULL || pidarr == NULL) {
+            free(keys);
+            free(pidarr);
+            bm_free_write(pr, file, pii, strb, empty, t_tree, t_paths,
+                          t_prptr, t_treeptr);
+            bm_seterr(errbuf, errbufsz, "out of memory");
+            return -1;
+        }
+        size_t k = 0;
+        for (i = 0; i < npaths; i++) {
+            const bm_path *n = &w->paths[i];
+            if (n->type == BM_TYPE_SPC)
+                continue;
+            keys[k].parent = n->parent;
+            keys[k].name = n->name;
+            pidarr[k] = n->pid;
+            k++;
+        }
+        /* Insertion order is pid order == the order above (paths[], minus
+         * special files), so the identity order is used. */
+        if (bom_btree_plan(keys, ncount, NULL, &plan) != 0) {
+            free(keys);
+            free(pidarr);
+            bm_free_write(pr, file, pii, strb, empty, t_tree, t_paths,
+                          t_prptr, t_treeptr);
+            bm_seterr(errbuf, errbufsz, "out of memory");
+            return -1;
+        }
+    }
+    leafblk = (uint32_t *)calloc((plan.nleaf ? plan.nleaf : 1),
+                                 sizeof(uint32_t));
+    if (leafblk == NULL) {
+        bom_btree_plan_free(&plan);
+        free(keys);
+        free(pidarr);
+        bm_free_write(pr, file, pii, strb, empty, t_tree, t_paths, t_prptr,
+                      t_treeptr);
+        bm_seterr(errbuf, errbufsz, "out of memory");
+        return -1;
+    }
+    leafblk[0] = 3;
 
     int idx = 11;
+    size_t sp = 0;
+    size_t ins = 0;
     for (i = 0; i < npaths; i++) {
         const bm_path *n = &w->paths[i];
         uint32_t pid = n->pid;
@@ -512,16 +547,30 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
             empty[pid] = idx + 1;
             idx += 2;
         }
+        /* A Paths split fires right after this entry's triplets: allocate
+         * the new leaf, then (first split only) the interior node. */
+        if (sp < plan.nsplits && plan.splits[sp].insert == (uint32_t)ins) {
+            uint32_t nl = plan.splits[sp].newleaf;
+            leafblk[nl] = (uint32_t)idx;
+            idx++;
+            if (interior_blk == 0) {
+                interior_blk = (uint32_t)idx;
+                idx++;
+            }
+            sp++;
+        }
+        ins++;
     }
-    int base_nob = idx - 1;
-    /* Chained Paths trees reserve nleaves extra blocks after the content
-     * area: leaves 1..nleaves-1 plus one interior node.  put() requires
-     * idx <= bs->nob, so the pool must cover them up front. */
-    int extra_blocks = (nleaves > 1) ? nleaves : 0;
-    int nob = base_nob + extra_blocks;
+    /* Everything lives in real blocks now (no reserved tail): the counter
+     * after the last allocation is exactly the last present block index. */
+    int nob = idx - 1;
 
     blob_store bs;
     if (blobs_init(&bs, nob) != 0) {
+        bom_btree_plan_free(&plan);
+        free(keys);
+        free(pidarr);
+        free(leafblk);
         bm_free_write(pr, file, pii, strb, empty, t_tree, t_paths, t_prptr,
                       t_treeptr);
         bm_seterr(errbuf, errbufsz, "out of memory");
@@ -784,87 +833,67 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
         put(&bs, 1, b1head, 12);
     }
 
-    /* blocks 2,3: Paths tree header + main Paths sorted by (parent,name) */
-    main_entry *mains =
-        (main_entry *)malloc((ncount ? ncount : 1) * sizeof(main_entry));
-    if (mains == NULL)
-        goto write_err;
-    size_t mi = 0;
-    for (i = 0; i < npaths; i++) {
-        const bm_path *n = &w->paths[i];
-        if (n->type == BM_TYPE_SPC)
-            continue;
-        mains[mi].pii = (uint32_t)pii[n->pid];
-        mains[mi].file = (uint32_t)file[n->pid];
-        mains[mi].parent = n->parent;
-        mains[mi].name = n->name;
-        mi++;
-    }
-    qsort(mains, ncount, sizeof(main_entry), cmp_main);
-
-    /* blocks 2,3(+): Paths tree header + paths sorted by (parent,name).
-     * nleaves == 1 keeps the historical single-leaf layout (bpi = block 3);
-     * nleaves > 1 emits a chained leaf list plus one interior node (bpi
-     * points at the interior; the last leaf is reached only via the chain). */
+    /* blocks 2,3(+): Paths tree header + paths sorted by (parent,name),
+     * emitted as the planner's leaves in chain order (leaf 0 at block 3,
+     * split leaves at their assigned blocks), plus one interior node (bpi)
+     * when the tree spans more than one leaf. */
     uint32_t bpi = 3;
-    for (int lk = 0; lk < nleaves; lk++) {
-        size_t start = (size_t)lk * BM_LEAF_CAP;
-        size_t count = ((size_t)ncount - start < BM_LEAF_CAP)
-                           ? (size_t)ncount - start
-                           : BM_LEAF_CAP;
-        uint32_t blk = (lk == 0) ? 3 : (uint32_t)(base_nob + lk);
-        uint32_t nxt = (lk + 1 >= nleaves)
-                           ? 0
-                           : (uint32_t)((lk + 1 == 0) ? 3 : base_nob + lk + 1);
-        uint32_t prv = (lk == 0)
-                           ? 0
-                           : (uint32_t)((lk - 1 == 0) ? 3 : base_nob + lk - 1);
+    size_t ci;
+    for (ci = 0; ci < plan.nleaf; ci++) {
+        uint32_t cid = plan.chain[ci];
+        size_t start = plan.leaf[cid].start;
+        size_t cnt = plan.leaf[cid].count;
+        uint32_t blk = leafblk[cid];
+        uint32_t nxt = (ci + 1 < plan.nleaf) ? leafblk[plan.chain[ci + 1]] : 0;
+        uint32_t prv = (ci > 0) ? leafblk[plan.chain[ci - 1]] : 0;
         uint8_t leaf[BM_TREE_PAD];
         memset(leaf, 0, sizeof(leaf));
         w16(leaf, 1); /* is_pi: leaf */
-        w16(leaf + 2, (uint16_t)count);
+        w16(leaf + 2, (uint16_t)cnt);
         w32(leaf + 4, nxt);
         w32(leaf + 8, prv);
-        for (i = 0; i < count; i++) {
-            w32(leaf + 12 + 8 * i, mains[start + i].pii);
-            w32(leaf + 16 + 8 * i, mains[start + i].file);
+        for (i = 0; i < cnt; i++) {
+            uint32_t pid = pidarr[plan.sorted[start + i]];
+            w32(leaf + 12 + 8 * i, (uint32_t)pii[pid]);
+            w32(leaf + 16 + 8 * i, (uint32_t)file[pid]);
         }
-        if (put(&bs, blk, leaf, sizeof(leaf)) != 0) {
-            free(mains);
+        if (put(&bs, blk, leaf, sizeof(leaf)) != 0)
             goto write_err;
-        }
     }
-    if (nleaves > 1) {
-        /* interior node: is_pi=0, count = nleaves-1, entries are
-         * (leaf_block, max_file) with max_file = file block of the subtree's
-         * greatest (parent,name) key (the last row of each leaf). */
+    if (plan.nleaf > 1) {
+        /* interior node: is_pi=0, count = nleaf-1, entries are
+         * (leaf_block, max_file) in chain order, max_file = file block of
+         * the leaf's greatest (parent,name) key; the last child carries
+         * max_file 0. */
         uint8_t node[BM_TREE_PAD];
         memset(node, 0, sizeof(node));
         w16(node, 0);
-        w16(node + 2, (uint16_t)(nleaves - 1));
+        w16(node + 2, (uint16_t)(plan.nleaf - 1));
         w32(node + 4, 0);
         w32(node + 8, 0);
-        for (int lk = 0; lk < nleaves - 1; lk++) {
-            size_t end = (size_t)(lk + 1) * BM_LEAF_CAP;
-            if (end > (size_t)ncount)
-                end = (size_t)ncount;
-            uint32_t blk = (lk == 0) ? 3 : (uint32_t)(base_nob + lk);
-            w32(node + 12 + 8 * lk, blk);
-            w32(node + 16 + 8 * lk, mains[end - 1].file);
+        for (ci = 0; ci < plan.nleaf - 1; ci++) {
+            uint32_t cid = plan.chain[ci];
+            uint32_t pid =
+                pidarr[plan.sorted[plan.leaf[cid].start + plan.leaf[cid].count - 1]];
+            w32(node + 12 + 8 * ci, leafblk[cid]);
+            w32(node + 16 + 8 * ci, (uint32_t)file[pid]);
         }
         {
-            uint32_t lastblk =
-                (nleaves - 1 == 0) ? 3 : (uint32_t)(base_nob + nleaves - 1);
-            w32(node + 12 + 8 * (nleaves - 1), lastblk);
+            uint32_t cid = plan.chain[plan.nleaf - 1];
+            w32(node + 12 + 8 * (plan.nleaf - 1), leafblk[cid]);
+            w32(node + 16 + 8 * (plan.nleaf - 1), 0);
         }
-        if (put(&bs, (uint32_t)(base_nob + nleaves), node, sizeof(node)) !=
-            0) {
-            free(mains);
+        if (put(&bs, interior_blk, node, sizeof(node)) != 0)
             goto write_err;
-        }
-        bpi = (uint32_t)(base_nob + nleaves);
+        bpi = interior_blk;
     }
-    free(mains);
+    bom_btree_plan_free(&plan);
+    free(keys);
+    free(pidarr);
+    free(leafblk);
+    keys = NULL;
+    pidarr = NULL;
+    leafblk = NULL;
 
     {
         uint8_t b2[21];
@@ -1056,6 +1085,10 @@ int bm_write_bom(const bm_walk *w, const char *out_path,
         fp = NULL;
     free(index);
     free(vars);
+    bom_btree_plan_free(&plan);
+    free(keys);
+    free(pidarr);
+    free(leafblk);
     blobs_free(&bs);
     bm_free_write(pr, file, pii, strb, empty, t_tree, t_paths, t_prptr,
                   t_treeptr);
@@ -1066,6 +1099,10 @@ ferr:
         fclose(fp);
     free(index);
     free(vars);
+    bom_btree_plan_free(&plan);
+    free(keys);
+    free(pidarr);
+    free(leafblk);
     blobs_free(&bs);
     bm_free_write(pr, file, pii, strb, empty, t_tree, t_paths, t_prptr,
                   t_treeptr);
@@ -1075,6 +1112,10 @@ ferr:
 write_err:
     free(index);
     free(vars);
+    bom_btree_plan_free(&plan);
+    free(keys);
+    free(pidarr);
+    free(leafblk);
     blobs_free(&bs);
     bm_free_write(pr, file, pii, strb, empty, t_tree, t_paths, t_prptr,
                   t_treeptr);

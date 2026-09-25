@@ -177,7 +177,7 @@ PathsEntry = { u32 block_index; u32 file_index }
 
 The meaning of the pair depends on the kind of Paths block:
 
-- Main paths table (blk 3): entries are `(PathInfoIndex block, File block)`,
+- Main paths table (blk 3..): entries are `(PathInfoIndex block, File block)`,
   sorted by `(parent_path_id, leaf name bytes)` — **not** by path id.
 - Hard-link trailer path table: entries are `(empty block, full-path string
   block)`, sorted byte-wise by the full path string (`"./..."` form, nested
@@ -186,8 +186,37 @@ The meaning of the pair depends on the kind of Paths block:
   4-byte blocks), sorted by the hard-link group's *first member's* path id.
 - VIndex/Size64 tables: empty in every fixture.
 
-`next/previous` chain multiple Paths blocks into a list (for trees with more
-paths than fit in one block); all observed blocks are single (0/0).
+`next_paths_block_index` / `previous_paths_block_index` chain a commit's Paths
+table into **multiple leaves** (one Paths block per leaf) once the row count
+overflows a leaf, and a single **interior node** (a Paths block with
+`is_path_info == 0`) indexes those leaves. Empty trees / small commits keep
+the historical single-leaf layout (0/0, no interior node).
+
+- Leaf capacity is 510 rows; a leaf that would exceed it on insert is split at
+  `mid = (count + 1) / 2` (the leaf keeps ranks 0..mid-1, the new right leaf
+  takes mid..count-1) and the new leaf links into the fwd/back chain
+  immediately after the split leaf. This reproduces Apple's observed split
+  points exactly (e.g. 511 rows → leaves [256, 255], 601 rows → [510, 91],
+  1002 rows → [510, 256, 236], 1501 rows → [510, 469, 201, 321]).
+- Rows are *inserted* in **path_id order** (source `File` scan order); the
+  leaves' entry lists are still the rows' (parent_path_id, name) key order.
+  `mkbom -i` and `bom_reencode` reinsert by ascending original path_id.
+- Tree block index (blk 2) `block_paths_index` points at the interior node
+  when `nleaf > 1`, else at block 3. Leaves occupy block 3 (creation id 0) and
+  then, in the order the splits created them, the blocks immediately after the
+  content area; the interior node (when present) is allocated at the first
+  split and sits after the first created leaf.
+- Interior node (is_path_info=0): `count = nleaf - 1` real children (chain
+  order), each `(leaf block index, greatest File block index within that
+  leaf)`, followed by one trailing `(leaf block index, 0)` whose block is the
+  final leaf in the chain (the reader binary-searches the real children and
+  falls through to the trailing entry for the rightmost leaf).
+
+Emitted layouts are verified byte-for-byte against `/usr/bin/mkbom` (block
+index + block content + `/usr/bin/lsbom`): 511 rows → 2 leaves
+[256, 255], 601 → [312, 289], 1002 → [498, 504], 1501 → 4 leaves
+[383, 387, 361, 370] (splits at insert rows 510, 979, 1050), all matching
+Apple's own split points in the same trees, in dir, `-s`, and `-i` modes.
 
 ### 4.5 `PathInfoIndex`
 
