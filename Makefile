@@ -55,7 +55,7 @@ all: $(MK) $(LS) $(DI) $(BOM_FW)
 
 $(MK): $(MK_OBJS) $(BOM_FW)
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -o $@ $(MK_OBJS) $(BOM_FW_DYLIB) $(RPATHS)
+	$(CC) $(CFLAGS) -o $@ $(MK_OBJS) $(BOM_FW_DYLIB) $(RPATHS) -framework CoreFoundation
 
 $(LS): $(LS_OBJS) $(BOM_FW)
 	@mkdir -p $(BUILD_DIR)
@@ -163,7 +163,7 @@ $(OBJDIR)/zip.o: src/ditto/zip.c src/ditto/ditto.h
 test: all check-link
 	@export DYLD_LIBRARY_PATH=$(CURDIR)/$(BUILD_DIR); \
 		python3 tools/prototype/run_tests.py --subject $(MK) && \
-		python3 tools/prototype/run_tests.py --subject-lsbom --lsbom $(LS) && \
+		python3 tools/prototype/run_tests.py --subject $(MK) --subject-lsbom --lsbom $(LS) && \
 		python3 tools/prototype/run_ditto_tests.py --subject $(DI)
 
 # The tools must resolve to our library, not Apple's shared cache: the test

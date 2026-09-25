@@ -617,6 +617,7 @@ static int write_bom_file(const char *out_path, const blob_store *bs, int nob,
     size_t indexlen = 4 + pool * 8 + 4;
     size_t varslen = 4 + 12 + 10 + 12 + 11 + 11;
     uint8_t pad[BM_FIXED_START - 32];
+    memset(pad, 0, sizeof(pad)); /* fixed block-0 pad: deterministic zeros */
     int rc = -1;
 
     offsets = (uint64_t *)calloc((size_t)nob + 1, sizeof(uint64_t));

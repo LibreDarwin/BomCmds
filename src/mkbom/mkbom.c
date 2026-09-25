@@ -1,8 +1,13 @@
 /* Copyright (C) 2026, LibreDarwin
  * SPDX-License-Identifier: BSD-3-Clause
  * mkbom: build a bill of materials for a directory tree, optionally as a
- * path-only bom (-s), or from an lsbom(8)-format file listing (-i).
- * Clean-room reimplementation, byte-identical to Apple's mkbom. */
+ * path-only bom (-s), from an lsbom(8)-format file listing (-i), or pruned
+ * to a set of language packs (-l).
+ * Clean-room reimplementation, byte-identical to Apple's mkbom (with and
+ * without -l).  NOTE: -l is a LibreDarwin extension -- we prune <lang>.lproj
+ * subtrees by re-encoding the full bom through BOMBomNewFromBomWithOptions;
+ * Apple's own langFilter operates on the bom's internal language-variant
+ * table (kBOMBomVariantLanguage) and does NOT remove .lproj trees. */
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -10,18 +15,79 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <CoreFoundation/CoreFoundation.h>
+
+#include "libbom/BOM.h"
 #include "libbom/bom_writer.h"
 #include "libbom/fs_walk.h"
 
 static void usage(void) {
     fprintf(stderr,
-            "Usage: mkbom [-h] [-s] directory bom\n"
-            "       mkbom [-s] -i filelist bom\n"
+            "Usage: mkbom [-h] [-s] [-l lang ...] directory bom\n"
+            "       mkbom [-s] [-l lang ...] -i filelist bom\n"
             "\n"
             "    -h              print full usage\n"
-            "    -s              create a path-only bom\n"
+            "    -s              create a path-only bom (not valid with -l)\n"
+            "    -l lang         keep only the named language packs, dropping\n"
+            "                    every other <lang>.lproj subtree (repeatable;\n"
+            "                    re-encodes the full bom through the framework\n"
+            "                    langFilter).  LibreDarwin extension -- Apple's\n"
+            "                    own langFilter only touches its internal\n"
+            "                    variant table, not .lproj trees\n"
             "    -i filelist     a file listing in lsbom(8) format used to "
             "create the bom file\n");
+}
+
+/* Re-encode `bom` to `out_path`, keeping only `langs`.  The output is
+ * written to a temp sibling and renamed over the target because the
+ * re-encoder reads the source by path.  Returns 0 or -1. */
+static int prune_langs(const char *bom, const char *out_path,
+                       char *const *langs, size_t nlangs) {
+    BOMBom *src = NULL, *dst = NULL;
+    CFMutableArrayRef arr = NULL;
+    size_t i;
+    char *tmp = NULL;
+    int rc = -1;
+
+    src = BOMBomOpen(bom, 0);
+    if (src == NULL)
+        return -1;
+    arr = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+    if (arr == NULL)
+        goto out;
+    for (i = 0; i < nlangs; i++) {
+        CFStringRef s = CFStringCreateWithCString(NULL, langs[i],
+                                                  kCFStringEncodingUTF8);
+        if (s == NULL)
+            goto out;
+        CFArrayAppendValue(arr, s);
+        CFRelease(s);
+    }
+    if (asprintf(&tmp, "%s.langtmp.XXXXXX", out_path) < 0)
+        goto out;
+    {
+        int fd = mkstemp(tmp);
+        if (fd < 0)
+            goto out;
+        close(fd);
+    }
+    dst = BOMBomNewFromBomWithOptions(tmp, src, 0, NULL, arr);
+    if (dst == NULL)
+        goto out;
+    BOMBomFree(dst);
+    dst = NULL;
+    if (rename(tmp, out_path) != 0)
+        goto out;
+    rc = 0;
+out:
+    if (tmp != NULL)
+        unlink(tmp);
+    free(tmp);
+    if (arr != NULL)
+        CFRelease(arr);
+    if (src != NULL)
+        BOMBomFree(src);
+    return rc;
 }
 
 /* ---- file-list walk building (mkbom -i) ---- */
@@ -468,8 +534,10 @@ int main(int argc, char **argv) {
     int ch;
     int simplified = 0;
     const char *filelist = NULL;
+    char **langs = NULL;          /* -l values, in order */
+    size_t nlangs = 0, clangs = 0;
 
-    while ((ch = getopt(argc, argv, "hsi:")) != -1) {
+    while ((ch = getopt(argc, argv, "hsi:l:")) != -1) {
         switch (ch) {
         case 'h':
             usage();
@@ -480,6 +548,18 @@ int main(int argc, char **argv) {
         case 'i':
             filelist = optarg;
             break;
+        case 'l':
+            if (nlangs == clangs) {
+                clangs = clangs ? clangs * 2 : 4;
+                char **nl = realloc(langs, clangs * sizeof *langs);
+                if (nl == NULL) {
+                    fprintf(stderr, "mkbom: out of memory\n");
+                    return 1;
+                }
+                langs = nl;
+            }
+            langs[nlangs++] = (char *)optarg;
+            break;
         default:
             usage();
             return 1;
@@ -488,8 +568,20 @@ int main(int argc, char **argv) {
     argc -= optind;
     argv += optind;
 
+    if (simplified && nlangs > 0) {
+        /* Path-only records are 4-byte stubs; the langFilter re-encode needs
+         * full 31+-byte records, so the combination cannot work.  Fail loudly
+         * rather than let the re-encode blow up mid-way.  Apple's -l has no
+         * such pairing (its langFilter ignores .lproj entirely); this is a
+         * LibreDarwin-extension guard. */
+        fprintf(stderr, "mkbom: -l cannot be used with -s "
+                        "(language pruning requires a full bom)\n");
+        free(langs);
+        return 1;
+    }
+
     if (filelist != NULL) {
-        /* mkbom [-s] -i filelist bom */
+        /* mkbom [-s] [-l ...] -i filelist bom */
         FILE *fp = fopen(filelist, "r");
         if (fp == NULL) {
             fprintf(stderr, "mkbom: Can't open \"%s\": %s\n", filelist,
@@ -513,10 +605,15 @@ int main(int argc, char **argv) {
         int rc = bm_write_bom(&walk, argv[0], errbuf, sizeof(errbuf));
         bm_walk_free(&walk);
         if (rc != 0) {
-            fprintf(stderr, "mkbom: %s: %s\n", argv[1],
+            fprintf(stderr, "mkbom: %s: %s\n", argv[0],
                     errbuf[0] ? errbuf : strerror(errno));
             return 1;
         }
+        if (nlangs > 0 && prune_langs(argv[0], argv[0], langs, nlangs) != 0) {
+            fprintf(stderr, "mkbom: %s: language prune failed\n", argv[0]);
+            return 1;
+        }
+        free(langs);
         return 0;
     }
 
@@ -541,5 +638,10 @@ int main(int argc, char **argv) {
                 errbuf[0] ? errbuf : strerror(errno));
         return 1;
     }
+    if (nlangs > 0 && prune_langs(argv[1], argv[1], langs, nlangs) != 0) {
+        fprintf(stderr, "mkbom: %s: language prune failed\n", argv[1]);
+        return 1;
+    }
+    free(langs);
     return 0;
 }
